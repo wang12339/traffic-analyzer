@@ -360,6 +360,9 @@ pub fn profile_device(apps: &[String], domains: &[String], mac: &str) -> (String
     if mac_prefix == "ea:0c:af" {
         return ("NRadio 路由器".into(), "OpenWrt".into(), 0.9);
     }
+    if mac_prefix == "b4:6e:10" || mac_prefix == "3a:a4:28" {
+        return ("Vivo".into(), "Android".into(), 0.9);
+    }
     if mac_prefix == "e2:08:f4" || mac_prefix == "5a:e2:02" {
         return ("代理客户端".into(), "Clash/Surge".into(), 0.6);
     }

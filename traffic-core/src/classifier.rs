@@ -351,6 +351,9 @@ pub fn infer_device(sni: &str, dns: &str, mac: &str) -> String {
     if mac_pref == "ea:0c:af" {
         return "NRadio".into();
     }
+    if mac_pref == "b4:6e:10" || mac_pref == "3a:a4:28" {
+        return "Vivo".into();
+    }
     if mac_pref == "e2:08:f4" || mac_pref == "5a:e2:02" {
         return "Clash/Stash".into();
     }
