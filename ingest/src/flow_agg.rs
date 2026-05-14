@@ -213,7 +213,6 @@ impl FlowAggregator {
                 .insert(src_ip, (src_mac.clone(), String::new()));
         }
 
-        let is_up = true; // from agent's perspective, src is the client
         let key = FlowKey::canonical(
             src_ip,
             dst_ip,
@@ -221,6 +220,7 @@ impl FlowAggregator {
             frame.dst_port,
             frame.protocol,
         );
+        let is_up = ip_from_bytes(&frame.src_ip) == key.src_ip;
 
         let state = self
             .flows

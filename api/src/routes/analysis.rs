@@ -272,7 +272,10 @@ pub async fn get_insights(state: web::Data<Arc<AppState>>) -> HttpResponse {
         }
     }
     let primary_ips: HashSet<String> = mac_primary.values().map(|(ip, _)| ip.clone()).collect();
-    let proxy_macs: HashSet<&str> = ["82:75:35", "e2:08:f4", "5a:e2:02"].iter().cloned().collect();
+    let proxy_macs: HashSet<&str> = ["82:75:35", "e2:08:f4", "5a:e2:02"]
+        .iter()
+        .cloned()
+        .collect();
 
     let mut device_profiles = Vec::new();
     let mut alerts = Vec::new();

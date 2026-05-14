@@ -113,7 +113,7 @@ fn linux_main() -> anyhow::Result<()> {
                 };
                 let pay_len = (u16::from_be_bytes([buf[16], buf[17]]) as usize)
                     .saturating_sub(ihl)
-                    .min(256)
+                    .min(SNAPLEN)
                     .saturating_sub(payload_offset - (14 + ihl)); // subtract L4 header
                 let payload = if payload_offset + pay_len > buf.len() {
                     &[]
@@ -152,7 +152,7 @@ fn linux_main() -> anyhow::Result<()> {
                 let payload_offset = 54 + l4_hdr_len;
                 let pay_len = (u16::from_be_bytes([buf[4], buf[5]]) as usize)
                     .saturating_sub(l4_hdr_len)
-                    .min(256);
+                    .min(SNAPLEN);
                 let payload = if payload_offset + pay_len > buf.len() {
                     &[]
                 } else {
