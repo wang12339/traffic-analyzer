@@ -1,0 +1,51 @@
+# Rust
+target/
+Cargo.lock
+
+# Node
+frontend/node_modules/
+frontend/dist/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Env
+.env
+.env.local
+
+# Logs
+/tmp/*.log
+
+# ClickHouse data (if running locally)
+clickhouse-data/
+
+# Store / serialized test data
+api/src/store/
+
+# ClickHouse auto-generated system files
+api/src/cores/
+api/src/data/
+api/src/metadata/
+api/src/status
+api/src/uuid
+
+# Local environment / personal config
+流量分析系统.command
+wechat_report.txt
+
+# Frontend dist
+frontend/dist/
