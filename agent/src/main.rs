@@ -94,22 +94,31 @@ fn linux_main() -> anyhow::Result<()> {
                 let proto = buf[23];
                 let src_ip = ip4_bytes(&buf[26..30]);
                 let dst_ip = ip4_bytes(&buf[30..34]);
-                let (sport, dport, pay_start) = if proto == 6 || proto == 17 {
+                let (sport, dport, payload_offset) = if proto == 6 || proto == 17 {
+                    let hdr_start = 14 + ihl;
+                    // TCP header length = data_offset >> 2 (4 bits at byte 12 of TCP hdr)
+                    // UDP header is always 8 bytes
+                    let l4_hdr_len = if proto == 6 {
+                        ((buf[hdr_start + 12] >> 4) * 4) as usize
+                    } else {
+                        8usize
+                    };
                     (
-                        u16::from_be_bytes([buf[14 + ihl], buf[14 + ihl + 1]]),
-                        u16::from_be_bytes([buf[14 + ihl + 2], buf[14 + ihl + 3]]),
-                        14 + ihl,
+                        u16::from_be_bytes([buf[hdr_start], buf[hdr_start + 1]]),
+                        u16::from_be_bytes([buf[hdr_start + 2], buf[hdr_start + 3]]),
+                        hdr_start + l4_hdr_len,
                     )
                 } else {
                     return None;
                 };
                 let pay_len = (u16::from_be_bytes([buf[16], buf[17]]) as usize)
                     .saturating_sub(ihl)
-                    .min(256);
-                let payload = if pay_start + pay_len > buf.len() {
+                    .min(256)
+                    .saturating_sub(payload_offset - (14 + ihl)); // subtract L4 header
+                let payload = if payload_offset + pay_len > buf.len() {
                     &[]
                 } else {
-                    &buf[pay_start..pay_start + pay_len]
+                    &buf[payload_offset..payload_offset + pay_len]
                 };
                 Some(PacketFrame {
                     timestamp_ns: now_ns(),
@@ -135,13 +144,19 @@ fn linux_main() -> anyhow::Result<()> {
                 let dst_ip = ip6_bytes(&buf[38..54]);
                 let sport = u16::from_be_bytes([buf[54], buf[55]]);
                 let dport = u16::from_be_bytes([buf[56], buf[57]]);
+                let l4_hdr_len = if proto == 6 {
+                    ((buf[54 + 12] >> 4) * 4) as usize
+                } else {
+                    8usize
+                };
+                let payload_offset = 54 + l4_hdr_len;
                 let pay_len = (u16::from_be_bytes([buf[4], buf[5]]) as usize)
-                    .saturating_sub(40)
+                    .saturating_sub(l4_hdr_len)
                     .min(256);
-                let payload = if 54 + pay_len > buf.len() {
+                let payload = if payload_offset + pay_len > buf.len() {
                     &[]
                 } else {
-                    &buf[54..54 + pay_len]
+                    &buf[payload_offset..payload_offset + pay_len]
                 };
                 Some(PacketFrame {
                     timestamp_ns: now_ns(),
