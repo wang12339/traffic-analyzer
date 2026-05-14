@@ -27,9 +27,11 @@ export function DeviceDetail({ ip, onBack }: { ip: string; onBack: () => void })
       if (anm.success) setAnomalies(anm.data);
       if (trd.success) setTrends(trd.data.map((r: any) => ({
         time: r.bucket?.substring(11, 16) || '',
-        mbps: (r.bytes / 125000 / 60).toFixed(3),
-        bytes: (r.bytes / 1024).toFixed(0),
-        flows: r.flows,
+        tcpKB: (r.tcp_bytes / 1024).toFixed(2),
+        udpKB: (r.udp_bytes / 1024).toFixed(2),
+        totalKB: (r.bytes / 1024).toFixed(0),
+        tcpFlows: r.tcp || 0,
+        udpFlows: r.udp || 0,
       })));
       if (det.success) {
         const appMap: Record<string, {bytes:number; flows:number}> = {};
@@ -67,16 +69,28 @@ export function DeviceDetail({ ip, onBack }: { ip: string; onBack: () => void })
       {/* Bandwidth Trend Chart */}
       {trends.length > 0 && (
         <div style={{background:'var(--bg-card)', borderRadius:12, border:'1px solid var(--border)', padding:16, marginBottom:16}}>
-          <h3 style={{fontSize:14, fontWeight:600, marginBottom:10}}>流量趋势 (2h)</h3>
+          <h3 style={{fontSize:14, fontWeight:600, marginBottom:10}}>
+            流量趋势 (2h)
+            <span style={{fontSize:11, fontWeight:400, color:'var(--text-secondary)', marginLeft:8}}>
+              <span style={{color:'#6366f1'}}>TCP</span> / <span style={{color:'#f59e0b'}}>UDP</span>
+            </span>
+          </h3>
           <ResponsiveContainer width="100%" height={160}>
             <AreaChart data={trends}>
               <defs>
-                <linearGradient id="colorBytes" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#6366f1" stopOpacity={0.3}/><stop offset="95%" stopColor="#6366f1" stopOpacity={0}/></linearGradient>
+                <linearGradient id="tcpGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#6366f1" stopOpacity={0.3}/><stop offset="95%" stopColor="#6366f1" stopOpacity={0}/></linearGradient>
+                <linearGradient id="udpGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#f59e0b" stopOpacity={0.3}/><stop offset="95%" stopColor="#f59e0b" stopOpacity={0}/></linearGradient>
               </defs>
               <XAxis dataKey="time" tick={{fontSize:10, fill:'#8888a0'}} axisLine={false} tickLine={false} interval="preserveStartEnd" />
               <YAxis tick={{fontSize:10, fill:'#8888a0'}} axisLine={false} tickLine={false} width={40} tickFormatter={(v:number) => `${v}KB`} />
-              <Tooltip contentStyle={{background:'#1a1a24', border:'1px solid #2a2a3a', borderRadius:8, fontSize:12}} labelFormatter={(l:any) => `时间: ${l}`} formatter={(v:any, n:string) => n==='mbps' ? [`${v} Mbps`, '吞吐'] : [`${v} KB`, '流量']} />
-              <Area type="monotone" dataKey="bytes" stroke="#6366f1" fill="url(#colorBytes)" strokeWidth={2} />
+              <Tooltip contentStyle={{background:'#1a1a24', border:'1px solid #2a2a3a', borderRadius:8, fontSize:12}}
+                labelFormatter={(l:any) => `时间: ${l}`}
+                formatter={(v:any, n:string) => {
+                  const labels: Record<string,string> = {tcpKB:'TCP', udpKB:'UDP', totalKB:'合计'};
+                  return [`${v} KB`, labels[n] || n];
+                }} />
+              <Area type="monotone" dataKey="tcpKB" stackId="1" stroke="#6366f1" fill="url(#tcpGrad)" strokeWidth={2} />
+              <Area type="monotone" dataKey="udpKB" stackId="1" stroke="#f59e0b" fill="url(#udpGrad)" strokeWidth={2} />
             </AreaChart>
           </ResponsiveContainer>
         </div>

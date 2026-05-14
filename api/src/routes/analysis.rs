@@ -207,8 +207,9 @@ pub async fn get_device_trends(state: web::Data<Arc<AppState>>, path: web::Path<
     let sql = format!(
         "SELECT toStartOfMinute(timestamp) as bucket,\
          sum(bytes_up+bytes_down) as bytes,count() as flows,\
-         countIf(protocol='TCP') as tcp,\
-         countIf(protocol='UDP') as udp \
+         countIf(protocol='TCP') as tcp,countIf(protocol='UDP') as udp,\
+         sum(if(protocol='TCP',bytes_up+bytes_down,0)) as tcp_bytes,\
+         sum(if(protocol='UDP',bytes_up+bytes_down,0)) as udp_bytes \
          FROM {}.flows WHERE src_ip='{}' AND timestamp>={} GROUP BY bucket ORDER BY bucket",
         state.database, ip.replace('\'', "\\'"), se
     );
