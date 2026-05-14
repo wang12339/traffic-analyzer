@@ -1,18 +1,24 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
+import { useApi } from '../hooks/useApi';
+import { LoadingSpinner, ErrorState, EmptyState } from './LoadingState';
 
 interface HourlyApp { h: number; app_name: string; c: number; }
 interface SiteVisit { h: number; sni: string; dns_domain: string; c: number; }
 
 export function TimelineView() {
-  const [apps, setApps] = useState<HourlyApp[]>([]);
-  const [sites, setSites] = useState<SiteVisit[]>([]);
   const [expandedHour, setExpandedHour] = useState<number | null>(null);
 
-  useEffect(() => {
-    fetch('/api/timeline').then(r => r.json()).then(d => {
-      if (d.success) { setApps(d.data.hourly_apps); setSites(d.data.visited_sites); }
-    }).catch(() => {});
-  }, []);
+  const timeline = useApi(
+    () => fetch('/api/timeline').then(r => r.json()).then(j => j.success ? j.data : Promise.reject(j.error)),
+    []
+  );
+
+  if (timeline.loading && !timeline.data) return <LoadingSpinner message="加载时间线..." />;
+  if (timeline.error) return <ErrorState error={timeline.error} onRetry={timeline.refetch} />;
+  if (!timeline.data) return <EmptyState message="暂无时间线数据" icon="⏱" />;
+
+  const apps: HourlyApp[] = timeline.data.hourly_apps || [];
+  const sites: SiteVisit[] = timeline.data.visited_sites || [];
 
   // Aggregate apps by hour
   const hourlyMap = new Map<number, { apps: { name: string; count: number }[]; total: number }>();
@@ -37,6 +43,8 @@ export function TimelineView() {
 
   const hours = Array.from(hourlyMap.entries()).sort(([a], [b]) => a - b);
 
+  if (hours.length === 0) return <EmptyState message="暂无时间线数据" icon="⏱" />;
+
   return (
     <div>
       <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 12 }}>
@@ -45,7 +53,7 @@ export function TimelineView() {
       {hours.map(([hour, data]) => {
         const maxCount = Math.max(...data.apps.map(a => a.count));
         const topApps = data.apps.sort((a, b) => b.count - a.count).slice(0, 3);
-        const sites = (sitesByHour.get(hour) || []).sort((a, b) => b.count - a.count).slice(0, 8);
+        const siteList = (sitesByHour.get(hour) || []).sort((a, b) => b.count - a.count).slice(0, 8);
         const isExpanded = expandedHour === hour;
 
         return (
@@ -64,23 +72,20 @@ export function TimelineView() {
               </div>
               <div style={{ flex: 1 }}>
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                  {topApps.map((app, i) => {
-                    const barW = maxCount > 0 ? (app.count / maxCount * 100) : 0;
-                    return (
-                      <span key={i} style={{
-                        fontSize: 11, background: 'var(--bg-hover)',
-                        padding: '2px 8px', borderRadius: 4,
-                        display: 'flex', alignItems: 'center', gap: 4
-                      }}>
-                        <span style={{
-                          display: 'inline-block', width: 6, height: 6, borderRadius: '50%',
-                          background: i === 0 ? 'var(--accent)' : i === 1 ? '#22c55e' : '#f59e0b'
-                        }} />
-                        {app.name}
-                        <span style={{ color: 'var(--text-secondary)' }}>{app.count}</span>
-                      </span>
-                    );
-                  })}
+                  {topApps.map((app, i) => (
+                    <span key={i} style={{
+                      fontSize: 11, background: 'var(--bg-hover)',
+                      padding: '2px 8px', borderRadius: 4,
+                      display: 'flex', alignItems: 'center', gap: 4
+                    }}>
+                      <span style={{
+                        display: 'inline-block', width: 6, height: 6, borderRadius: '50%',
+                        background: i === 0 ? 'var(--accent)' : i === 1 ? '#22c55e' : '#f59e0b'
+                      }} />
+                      {app.name}
+                      <span style={{ color: 'var(--text-secondary)' }}>{app.count}</span>
+                    </span>
+                  ))}
                   {data.apps.length > 3 && (
                     <span style={{ fontSize: 11, color: 'var(--text-secondary)', padding: '2px 4px' }}>
                       +{data.apps.length - 3}
@@ -93,11 +98,11 @@ export function TimelineView() {
               </div>
             </div>
 
-            {isExpanded && sites.length > 0 && (
+            {isExpanded && siteList.length > 0 && (
               <div style={{ padding: '0 14px 8px 68px', borderTop: '1px solid var(--border)', paddingTop: 8 }}>
                 <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginBottom: 4 }}>访问的网站:</div>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-                  {sites.map((site, i) => (
+                  {siteList.map((site, i) => (
                     <span key={i} style={{
                       fontSize: 11, background: 'var(--bg-hover)',
                       padding: '2px 8px', borderRadius: 4, color: 'var(--text-secondary)',
@@ -113,9 +118,6 @@ export function TimelineView() {
           </div>
         );
       })}
-      {hours.length === 0 && (
-        <div style={{ padding: 60, textAlign: 'center', color: 'var(--text-secondary)' }}>暂无时间线数据</div>
-      )}
     </div>
   );
 }

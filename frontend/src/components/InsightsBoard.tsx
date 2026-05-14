@@ -1,22 +1,20 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
+import { useApi } from '../hooks/useApi';
+import { LoadingSpinner, ErrorState } from './LoadingState';
 import { KpiBox, TYPE_ICONS, fmt } from './KpiBox';
 
 export function InsightsBoard({ onDeviceClick }: { onDeviceClick?: (ip: string) => void }) {
-  const [data, setData] = useState<any>(null);
-  useEffect(() => {
-    const load = async () => {
-      try {
-        const resp = await fetch('/api/insights');
-        const json = await resp.json();
-        if (json.success) setData(json.data);
-      } catch {}
-    };
-    load(); const iv = setInterval(load, 8000);
-    return () => clearInterval(iv);
-  }, []);
+  const insights = useApi(
+    () => fetch('/api/insights').then(r => r.json()).then(j => j.success ? j.data : Promise.reject(j.error)),
+    [],
+    { interval: 8000 }
+  );
 
-  if (!data) return <div style={{padding:60, textAlign:'center', color:'var(--text-secondary)'}}>加载中...</div>;
+  if (insights.loading && !insights.data) return <LoadingSpinner message="加载洞见数据..." />;
+  if (insights.error) return <ErrorState error={insights.error} onRetry={insights.refetch} />;
+  if (!insights.data) return null;
 
+  const data = insights.data;
   const s = data.summary;
   const riskCount = data.alerts.length;
 

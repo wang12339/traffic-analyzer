@@ -1,117 +1,125 @@
 //! Agent: runs on the router. Captures raw ethernet frames via AF_PACKET,
 //! parses headers, and sends raw payloads to the Rust ingest server over TCP.
-//! No external C library dependencies — pure Linux syscalls.
+//! Linux-only — uses AF_PACKET raw sockets (not available on macOS/Windows).
 
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
-
-use anyhow::Result;
-use clap::Parser;
-use traffic_core::PacketFrame;
-use tokio::io::AsyncWriteExt;
-use tokio::net::TcpStream;
-use tokio::time::sleep;
-use tracing::{info, warn, error as log_error};
-macro_rules! error { ($($arg:tt)*) => { log_error!($($arg)*) } }
-use tracing_subscriber::EnvFilter;
-
-const SNAPLEN: usize = 2048;
-const SEND_BUF_SIZE: usize = 512;
-const RECONNECT_DELAY: Duration = Duration::from_secs(5);
-const BPF_FILTER: &[u8] = &[
-    0x40, 0x00, 0x00, 0x00, // ld #0 (accept all)
-    0x15, 0x00, 0x00, 0x00, // ret #SNAPLEN
-    0x06, 0x08, 0x00, 0x00, // (placeholder for snaplen)
-];
-
-#[derive(Parser)]
-#[command(name = "agent", about = "Raw packet capture agent for OpenWrt")]
-struct Args {
-    #[arg(short = 'n', long, default_value = "br-lan")]
-    interface: String,
-    #[arg(short = 's', long, default_value = "192.168.66.186:9100")]
-    ingest_addr: String,
+#[cfg(not(target_os = "linux"))]
+fn main() {
+    eprintln!("Error: agent binary is Linux-only (requires AF_PACKET raw sockets)");
+    std::process::exit(1);
 }
 
-fn now_ns() -> u64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_nanos() as u64
+#[cfg(target_os = "linux")]
+fn main() {
+    linux_main();
 }
 
-fn ip4_bytes(b: &[u8]) -> IpAddr { IpAddr::V4(Ipv4Addr::new(b[0], b[1], b[2], b[3])) }
-fn ip6_bytes(b: &[u8]) -> IpAddr { IpAddr::V6(Ipv6Addr::from(<[u8; 16]>::try_from(b).unwrap_or([0; 16]))) }
-fn ip_to_vec(ip: IpAddr) -> Vec<u8> { match ip { IpAddr::V4(v) => v.octets().to_vec(), IpAddr::V6(v) => v.octets().to_vec() } }
+#[cfg(target_os = "linux")]
+fn linux_main() -> Result<(), Box<dyn std::error::Error>> {
+    use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Arc;
+    use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-#[repr(C)]
-struct sockaddr_ll {
-    sll_family: u16,
-    sll_protocol: u16,
-    sll_ifindex: i32,
-    sll_hatype: u16,
-    sll_pkttype: u8,
-    sll_halen: u8,
-    sll_addr: [u8; 8],
-}
+    use anyhow::Result;
+    use clap::Parser;
+    use traffic_core::PacketFrame;
+    use tokio::io::AsyncWriteExt;
+    use tokio::net::TcpStream;
+    use tokio::time::sleep;
+    use tracing::{info, warn, error as log_error};
+    macro_rules! error { ($($arg:tt)*) => { log_error!($($arg)*) } }
+    use tracing_subscriber::EnvFilter;
 
-/// Parse AF_PACKET capture into a PacketFrame.
-fn parse_frame(buf: &[u8]) -> Option<PacketFrame> {
-    if buf.len() < 14 { return None; }
-    let mut mac = [0u8; 6];
-    mac.copy_from_slice(&buf[6..12]);
-    let ethertype = u16::from_be_bytes([buf[12], buf[13]]);
+    const SNAPLEN: usize = 2048;
+    const SEND_BUF_SIZE: usize = 512;
+    const RECONNECT_DELAY: Duration = Duration::from_secs(5);
 
-    match ethertype {
-        0x0800 => {
-            if buf.len() < 34 { return None; }
-            let ihl = ((buf[14] & 0x0F) * 4) as usize;
-            if buf.len() < 14 + ihl + 4 { return None; }
-            let proto = buf[23];
-            let src_ip = ip4_bytes(&buf[26..30]);
-            let dst_ip = ip4_bytes(&buf[30..34]);
-            let (sport, dport, pay_start) = if proto == 6 || proto == 17 {
-                (u16::from_be_bytes([buf[14+ihl], buf[14+ihl+1]]),
-                 u16::from_be_bytes([buf[14+ihl+2], buf[14+ihl+3]]),
-                 14 + ihl)
-            } else { return None; };
-            let pay_len = (u16::from_be_bytes([buf[16], buf[17]]) as usize).saturating_sub(ihl).min(256);
-            let payload = if pay_start + pay_len > buf.len() { &[] } else { &buf[pay_start..pay_start+pay_len] };
-            Some(PacketFrame {
-                timestamp_ns: now_ns(), src_ip: ip_to_vec(src_ip), dst_ip: ip_to_vec(dst_ip),
-                src_port: sport, dst_port: dport, protocol: proto,
-                payload: payload.to_vec(), src_mac: mac, snaplen: SNAPLEN as u16,
-            })
-        }
-        0x86DD => {
-            if buf.len() < 54 { return None; }
-            let proto = buf[20];
-            if proto != 6 && proto != 17 { return None; }
-            let src_ip = ip6_bytes(&buf[22..38]);
-            let dst_ip = ip6_bytes(&buf[38..54]);
-            let sport = u16::from_be_bytes([buf[54], buf[55]]);
-            let dport = u16::from_be_bytes([buf[56], buf[57]]);
-            let pay_len = (u16::from_be_bytes([buf[4], buf[5]]) as usize).saturating_sub(40).min(256);
-            let payload = if 54 + pay_len > buf.len() { &[] } else { &buf[54..54+pay_len] };
-            Some(PacketFrame {
-                timestamp_ns: now_ns(), src_ip: ip_to_vec(src_ip), dst_ip: ip_to_vec(dst_ip),
-                src_port: sport, dst_port: dport, protocol: proto,
-                payload: payload.to_vec(), src_mac: mac, snaplen: SNAPLEN as u16,
-            })
-        }
-        _ => None,
+    #[derive(Parser)]
+    #[command(name = "agent", about = "Raw packet capture agent for OpenWrt")]
+    struct Args {
+        #[arg(short = 'n', long, default_value = "br-lan")]
+        interface: String,
+        #[arg(short = 's', long, default_value = "192.168.66.186:9100")]
+        ingest_addr: String,
     }
-}
 
-/// Get interface index from name (SIOCGIFINDEX).
-fn if_nametoindex(name: &str) -> Result<i32> {
-    use std::ffi::CString;
-    let cname = CString::new(name)?;
-    let idx = unsafe { libc::if_nametoindex(cname.as_ptr()) };
-    if idx == 0 { anyhow::bail!("interface {} not found", name); }
-    Ok(idx as i32)
-}
+    fn now_ns() -> u64 {
+        SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_nanos() as u64
+    }
 
-fn main() -> Result<()> {
+    fn ip4_bytes(b: &[u8]) -> IpAddr { IpAddr::V4(Ipv4Addr::new(b[0], b[1], b[2], b[3])) }
+    fn ip6_bytes(b: &[u8]) -> IpAddr { IpAddr::V6(Ipv6Addr::from(<[u8; 16]>::try_from(b).unwrap_or([0; 16]))) }
+    fn ip_to_vec(ip: IpAddr) -> Vec<u8> { match ip { IpAddr::V4(v) => v.octets().to_vec(), IpAddr::V6(v) => v.octets().to_vec() } }
+
+    #[repr(C)]
+    struct sockaddr_ll {
+        sll_family: u16,
+        sll_protocol: u16,
+        sll_ifindex: i32,
+        sll_hatype: u16,
+        sll_pkttype: u8,
+        sll_halen: u8,
+        sll_addr: [u8; 8],
+    }
+
+    /// Parse AF_PACKET capture into a PacketFrame.
+    fn parse_frame(buf: &[u8]) -> Option<PacketFrame> {
+        if buf.len() < 14 { return None; }
+        let mut mac = [0u8; 6];
+        mac.copy_from_slice(&buf[6..12]);
+        let ethertype = u16::from_be_bytes([buf[12], buf[13]]);
+
+        match ethertype {
+            0x0800 => {
+                if buf.len() < 34 { return None; }
+                let ihl = ((buf[14] & 0x0F) * 4) as usize;
+                if buf.len() < 14 + ihl + 4 { return None; }
+                let proto = buf[23];
+                let src_ip = ip4_bytes(&buf[26..30]);
+                let dst_ip = ip4_bytes(&buf[30..34]);
+                let (sport, dport, pay_start) = if proto == 6 || proto == 17 {
+                    (u16::from_be_bytes([buf[14+ihl], buf[14+ihl+1]]),
+                     u16::from_be_bytes([buf[14+ihl+2], buf[14+ihl+3]]),
+                     14 + ihl)
+                } else { return None; };
+                let pay_len = (u16::from_be_bytes([buf[16], buf[17]]) as usize).saturating_sub(ihl).min(256);
+                let payload = if pay_start + pay_len > buf.len() { &[] } else { &buf[pay_start..pay_start+pay_len] };
+                Some(PacketFrame {
+                    timestamp_ns: now_ns(), src_ip: ip_to_vec(src_ip), dst_ip: ip_to_vec(dst_ip),
+                    src_port: sport, dst_port: dport, protocol: proto,
+                    payload: payload.to_vec(), src_mac: mac, snaplen: SNAPLEN as u16,
+                })
+            }
+            0x86DD => {
+                if buf.len() < 54 { return None; }
+                let proto = buf[20];
+                if proto != 6 && proto != 17 { return None; }
+                let src_ip = ip6_bytes(&buf[22..38]);
+                let dst_ip = ip6_bytes(&buf[38..54]);
+                let sport = u16::from_be_bytes([buf[54], buf[55]]);
+                let dport = u16::from_be_bytes([buf[56], buf[57]]);
+                let pay_len = (u16::from_be_bytes([buf[4], buf[5]]) as usize).saturating_sub(40).min(256);
+                let payload = if 54 + pay_len > buf.len() { &[] } else { &buf[54..54+pay_len] };
+                Some(PacketFrame {
+                    timestamp_ns: now_ns(), src_ip: ip_to_vec(src_ip), dst_ip: ip_to_vec(dst_ip),
+                    src_port: sport, dst_port: dport, protocol: proto,
+                    payload: payload.to_vec(), src_mac: mac, snaplen: SNAPLEN as u16,
+                })
+            }
+            _ => None,
+        }
+    }
+
+    /// Get interface index from name (SIOCGIFINDEX).
+    fn if_nametoindex(name: &str) -> Result<i32> {
+        use std::ffi::CString;
+        let cname = CString::new(name)?;
+        let idx = unsafe { libc::if_nametoindex(cname.as_ptr()) };
+        if idx == 0 { anyhow::bail!("interface {} not found", name); }
+        Ok(idx as i32)
+    }
+
+    // ─── Main logic ───
     tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::from_default_env().add_directive(tracing::Level::INFO.into()))
         .with_target(false)

@@ -1,13 +1,14 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
+import { useApi } from '../hooks/useApi';
+import { LoadingSpinner, ErrorState, EmptyState } from './LoadingState';
 
 export function HttpView() {
-  const [data, setData] = useState<any[]>([]);
-  useEffect(() => {
-    const load = async () => {
-      try { const r = await fetch('/api/http'); const j = await r.json(); if (j.success) setData(j.data); }
-      catch {}
-    }; load(); const iv = setInterval(load, 5000); return () => clearInterval(iv);
-  }, []);
+  const http = useApi(
+    () => fetch('/api/http').then(r => r.json()).then(j => j.success ? j.data : Promise.reject(j.error)),
+    [],
+    { interval: 5000 }
+  );
+
   return (
     <div>
       <div style={{background:'var(--bg-card)',borderRadius:12,border:'1px solid var(--border)',padding:20,marginBottom:16}}>
@@ -18,7 +19,11 @@ export function HttpView() {
           <code style={{display:'block',marginTop:4,padding:'4px 8px',background:'#000',borderRadius:4}}>sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain ~/.mitmproxy/mitmproxy-ca-cert.pem</code>
         </div>
       </div>
-      {data.map((r:any,i:number) => (
+
+      {http.loading && !http.data ? <LoadingSpinner message="加载 HTTP 数据..." /> :
+       http.error ? <ErrorState error={http.error} onRetry={http.refetch} /> :
+       !http.data || http.data.length === 0 ? <EmptyState message="暂无 HTTP 解密数据。启动 mitmproxy 后通过代理发请求。" icon="🔓" /> :
+       http.data.map((r:any,i:number) => (
         <div key={i} style={{display:'flex',justifyContent:'space-between',padding:'8px 14px',fontSize:13,background:'var(--bg-card)',borderBottom:'1px solid var(--border)',borderRadius:i===0?8:0}}>
           <div style={{overflow:'hidden',flex:1}}>
             <span style={{background:'var(--accent)',color:'#fff',padding:'1px 6px',borderRadius:3,fontSize:11,marginRight:8}}>{r.method}</span>
@@ -28,7 +33,6 @@ export function HttpView() {
           <span style={{color:r.status_code>=200&&r.status_code<300?'var(--success)':'var(--warning)'}}>{r.status_code||'...'}</span>
         </div>
       ))}
-      {data.length===0 && <div style={{padding:40,textAlign:'center',color:'var(--text-secondary)'}}>暂无 HTTP 解密数据。启动 mitmproxy 后通过代理发请求。</div>}
     </div>
   );
 }

@@ -1,17 +1,20 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
+import { useApi } from '../hooks/useApi';
+import { LoadingSpinner, ErrorState, EmptyState } from './LoadingState';
 
 export function TopologyView() {
-  const [data, setData] = useState<any[]>([]);
-  const [error, setError] = useState('');
-  useEffect(() => {
-    const load = async () => {
-      try { const r = await fetch('/api/topology'); const j = await r.json(); if (j.success) setData(j.data); }
-      catch(e:any) { setError(e.message); }
-    }; load(); const iv = setInterval(load, 15000); return () => clearInterval(iv);
-  }, []);
-  if (error) return <div>{error}</div>;
-  if (!data.length) return <div style={{padding:40,textAlign:'center',color:'var(--text-secondary)'}}>暂无拓扑数据</div>;
-  const devs = [...new Set(data.map((r:any)=>r.src_ip))].slice(0,15);
+  const topo = useApi(
+    () => fetch('/api/topology').then(r => r.json()).then(j => j.success ? j.data : Promise.reject(j.error)),
+    [],
+    { interval: 15000 }
+  );
+
+  if (topo.loading && !topo.data) return <LoadingSpinner message="加载拓扑..." />;
+  if (topo.error) return <ErrorState error={topo.error} onRetry={topo.refetch} />;
+  if (!topo.data || topo.data.length === 0) return <EmptyState message="暂无拓扑数据" icon="🗺️" />;
+
+  const data = topo.data;
+  const devs = [...new Set(data.map((r:any) => r.src_ip))].slice(0,15);
   return (
     <div>
       <div style={{fontSize:13,color:'var(--text-secondary)',marginBottom:12}}>过去1小时连接 ({data.length}条)</div>

@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
+import { useApi } from './hooks/useApi';
 import { getStats } from './utils/api';
 import type { Stats } from './utils/api';
 import { InsightsBoard } from './components/InsightsBoard';
@@ -16,12 +17,7 @@ export default function App() {
   const [tab, setTab] = useState('insights');
   const [since, setSince] = useState('30m');
   const [detailIp, setDetailIp] = useState<string|null>(null);
-  const [stats, setStats] = useState<Stats|null>(null);
-  useEffect(() => {
-    getStats(since).then(setStats).catch(()=>{});
-    const iv = setInterval(() => getStats(since).then(setStats).catch(()=>{}), 8000);
-    return () => clearInterval(iv);
-  }, [since]);
+  const stats = useApi(() => getStats(since), [since], { interval: 8000 });
   const handleDeviceClick = (ip: string) => setDetailIp(ip);
   if (detailIp) {
     return (
@@ -36,7 +32,7 @@ export default function App() {
         <div>
           <h1 style={{fontSize:22, fontWeight:700, letterSpacing:-0.3}}>流量分析系统</h1>
           <p style={{fontSize:13, color:'var(--text-secondary)', marginTop:2}}>
-            {stats ? `${stats.total_flows}条流 · ${stats.unique_devices}台设备 · ${stats.flows_per_sec.toFixed(1)}流/秒` : '加载中...'}
+            {stats.data ? `${stats.data.total_flows}条流 · ${stats.data.unique_devices}台设备 · ${stats.data.flows_per_sec.toFixed(1)}流/秒` : '加载中...'}
           </p>
         </div>
         <select value={since} onChange={e=>setSince(e.target.value)} style={{background:'var(--bg-card)', border:'1px solid var(--border)', borderRadius:8, padding:'8px 12px', color:'var(--text-primary)', fontSize:13}}>

@@ -1,8 +1,11 @@
 """mitmproxy addon: extract HTTP/HTTPS metadata and send to analysis pipeline."""
 import json
+import logging
 import socket
 import time
 from mitmproxy import http
+
+logger = logging.getLogger(__name__)
 
 ANALYSIS_SERVER = ('127.0.0.1', 2055)  # Local UDP ingest
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -35,8 +38,8 @@ def request(flow: http.HTTPFlow):
     }
     try:
         sock.sendto(json.dumps(record).encode(), ANALYSIS_SERVER)
-    except:
-        pass
+    except Exception as e:
+        logger.warning("Failed to send %s to analysis server: %s", record.get('type', 'unknown'), e)
 
 
 def response(flow: http.HTTPFlow):
@@ -56,5 +59,5 @@ def response(flow: http.HTTPFlow):
     }
     try:
         sock.sendto(json.dumps(record).encode(), ANALYSIS_SERVER)
-    except:
-        pass
+    except Exception as e:
+        logger.warning("Failed to send %s to analysis server: %s", record.get('type', 'unknown'), e)

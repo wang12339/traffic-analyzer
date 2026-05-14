@@ -1,0 +1,13 @@
+FROM rust:1.80-slim-bookworm AS builder
+WORKDIR /app
+COPY Cargo.toml Cargo.lock ./
+COPY traffic-core/ traffic-core/
+COPY ingest/ ingest/
+RUN apt-get update && apt-get install -y pkg-config libssl-dev && rm -rf /var/lib/apt/lists/*
+RUN cargo build --release -p ingest
+
+FROM debian:bookworm-slim
+RUN apt-get update && apt-get install -y ca-certificates && rm -rf /var/lib/apt/lists/*
+COPY --from=builder /app/target/release/ingest /app/ingest
+EXPOSE 9100 2055/udp
+ENTRYPOINT ["/app/ingest"]

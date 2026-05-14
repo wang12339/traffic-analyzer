@@ -347,3 +347,177 @@ fn mac_to_string(mac: &[u8; 6]) -> String {
     format!("{:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}",
             mac[0], mac[1], mac[2], mac[3], mac[4], mac[5])
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use traffic_core::FlowKey;
+
+    #[test]
+    fn test_flow_state_new() {
+        let state = FlowState::new(1_000_000);
+        assert_eq!(state.first_seen_ns, 1_000_000);
+        assert_eq!(state.packets_up, 0);
+        assert_eq!(state.packets_down, 0);
+        assert!(!state.finalized);
+    }
+
+    #[test]
+    fn test_flow_state_record_packet_up() {
+        let mut state = FlowState::new(1_000_000);
+        state.record_packet(1_000_001, 100, true);
+        assert_eq!(state.packets_up, 1);
+        assert_eq!(state.bytes_up, 100);
+        assert_eq!(state.packets_down, 0);
+    }
+
+    #[test]
+    fn test_flow_state_record_packet_down() {
+        let mut state = FlowState::new(1_000_000);
+        state.record_packet(1_000_001, 200, false);
+        assert_eq!(state.packets_down, 1);
+        assert_eq!(state.bytes_down, 200);
+    }
+
+    #[test]
+    fn test_size_bucket_boundaries() {
+        // bucket 0: 0..=64
+        assert_eq!(FlowState::size_bucket(0), 0);
+        assert_eq!(FlowState::size_bucket(64), 0);
+        // bucket 1: 65..=128
+        assert_eq!(FlowState::size_bucket(65), 1);
+        assert_eq!(FlowState::size_bucket(128), 1);
+        // bucket 2: 129..=256
+        assert_eq!(FlowState::size_bucket(129), 2);
+        assert_eq!(FlowState::size_bucket(256), 2);
+        // bucket 3: 257..=512
+        assert_eq!(FlowState::size_bucket(257), 3);
+        assert_eq!(FlowState::size_bucket(512), 3);
+        // bucket 4: 513..=1024
+        assert_eq!(FlowState::size_bucket(513), 4);
+        assert_eq!(FlowState::size_bucket(1024), 4);
+        // bucket 5: 1025..=1500
+        assert_eq!(FlowState::size_bucket(1025), 5);
+        assert_eq!(FlowState::size_bucket(1500), 5);
+        // bucket 6: 1501+
+        assert_eq!(FlowState::size_bucket(1501), 6);
+        assert_eq!(FlowState::size_bucket(9000), 6);
+    }
+
+    #[test]
+    fn test_iat_calculation() {
+        let mut state = FlowState::new(1_000_000_000);
+        // Record two packets 1ms apart
+        state.record_packet(1_000_000_000, 100, true);
+        state.record_packet(1_001_000_000, 100, true); // 1ms = 1000us
+        assert_eq!(state.iat_count, 1);
+        assert!((state.iat_sum_us - 1000.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_iat_ignores_large_gaps() {
+        let mut state = FlowState::new(1_000_000_000);
+        state.record_packet(1_000_000_000, 100, true);
+        state.record_packet(50_000_000_000, 100, true); // 49s gap, > 10s
+        assert_eq!(state.iat_count, 0, "gaps > 10s should be ignored");
+    }
+
+    #[test]
+    fn test_histogram_merge_in_to_flow_record() {
+        let mut state = FlowState::new(1_000_000);
+        state.record_packet(1_000_001, 50,  true);   // bucket 0 up
+        state.record_packet(1_000_002, 200, false);   // bucket 2 down
+        state.record_packet(1_000_003, 1000, false);  // bucket 4 down
+
+        let key = FlowKey::canonical(
+            IpAddr::V4(Ipv4Addr::new(192, 168, 1, 2)),
+            IpAddr::V4(Ipv4Addr::new(93, 184, 216, 34)),
+            54321, 443, 6,
+        );
+        let app = Classification::unknown();
+        let record = state.to_flow_record(&key, &app);
+
+        assert_eq!(record.pkt_size_hist[0], 1); // one 50-byte packet
+        assert_eq!(record.pkt_size_hist[2], 1); // one 200-byte packet
+        assert_eq!(record.pkt_size_hist[4], 1); // one 1000-byte packet
+        assert_eq!(record.packets_up, 1);
+        assert_eq!(record.packets_down, 2);
+    }
+
+    #[test]
+    fn test_to_flow_record_populates_fields() {
+        let mut state = FlowState::new(1_000_000);
+        state.record_packet(1_000_001, 100, true);
+        state.sni = Some("example.com".into());
+        state.dns_domain = Some("example.com".into());
+        state.http_host = Some("example.com".into());
+        state.src_mac = Some("aa:bb:cc:dd:ee:ff".into());
+
+        let key = FlowKey::canonical(
+            IpAddr::V4(Ipv4Addr::new(10, 0, 0, 5)),
+            IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8)),
+            12345, 443, 6,
+        );
+        let app = Classification::named(1, "YouTube", "Video", 0.85);
+        let record = state.to_flow_record(&key, &app);
+
+        // FlowKey::canonical normalizes (src,dst) ordering. Since 10.x > 8.x,
+        // the order is swapped, making src=8.8.8.8 and dst=10.0.0.5.
+        assert_eq!(record.src_ip, "8.8.8.8");
+        assert_eq!(record.dst_ip, "10.0.0.5");
+        assert_eq!(record.sni, "example.com");
+        assert_eq!(record.app_name, "YouTube");
+        assert_eq!(record.app_category, "Video");
+        assert_eq!(record.confidence, 0.85);
+        assert_eq!(record.src_mac, "aa:bb:cc:dd:ee:ff");
+        assert_eq!(record.duration_ms, 0);
+    }
+
+    #[test]
+    fn test_flow_key_canonical() {
+        let a = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 2));
+        let b = IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1));
+
+        let k1 = FlowKey::canonical(a, b, 1000, 443, 6);
+        let k2 = FlowKey::canonical(b, a, 443, 1000, 6);
+
+        // After canonicalization, both should normalize to the same key
+        assert_eq!(k1, k2);
+    }
+
+    #[test]
+    fn test_flow_key_different_protocols() {
+        let a = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 2));
+        let b = IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1));
+
+        let tcp = FlowKey::canonical(a, b, 1000, 443, 6);
+        let udp = FlowKey::canonical(a, b, 1000, 443, 17);
+
+        assert_ne!(tcp, udp);
+    }
+
+    #[test]
+    fn test_ip_from_bytes() {
+        let v4 = ip_from_bytes(&[192, 168, 1, 1]);
+        assert_eq!(v4.to_string(), "192.168.1.1");
+
+        let v6 = ip_from_bytes(&[0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x01]);
+        assert_eq!(v6.to_string(), "2001:db8::1");
+
+        // Invalid length -> 0.0.0.0
+        let fallback = ip_from_bytes(&[1, 2, 3]);
+        assert_eq!(fallback.to_string(), "0.0.0.0");
+    }
+
+    #[test]
+    fn test_mac_to_string() {
+        assert_eq!(
+            mac_to_string(&[0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff]),
+            "aa:bb:cc:dd:ee:ff"
+        );
+        assert_eq!(
+            mac_to_string(&[0x00, 0x11, 0x22, 0x33, 0x44, 0x55]),
+            "00:11:22:33:44:55"
+        );
+    }
+}

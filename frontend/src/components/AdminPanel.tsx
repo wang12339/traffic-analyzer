@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState, useEffect } from 'react';
 
 export function AdminPanel() {
   const [status, setStatus] = useState<any>(null);
@@ -12,7 +12,7 @@ export function AdminPanel() {
         const r = await fetch('/api/admin/status', {headers:{'X-API-Key':apiKey}});
         const j = await r.json();
         if (j.success) setStatus(j.data);
-      } catch {}
+      } catch { /* status fetch best-effort */ }
     };
     load(); const iv = setInterval(load, 5000); return () => clearInterval(iv);
   }, [apiKey]);

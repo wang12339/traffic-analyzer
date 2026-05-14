@@ -178,3 +178,101 @@ pub fn behavior_score(first_seen_count: usize, total_destinations: usize, app_co
     let intensity = (flow_count as f64 / 300.0).min(1.0);
     (novelty * 50.0 + diversity * 25.0 + intensity * 25.0).min(100.0)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_since_expr_minutes() {
+        let r = since_expr("15m");
+        assert_eq!(r, "now() - toIntervalMinute(15)");
+    }
+
+    #[test]
+    fn test_since_expr_hours() {
+        let r = since_expr("1h");
+        assert_eq!(r, "now() - toIntervalHour(1)");
+    }
+
+    #[test]
+    fn test_since_expr_days() {
+        let r = since_expr("7d");
+        assert_eq!(r, "now() - toIntervalDay(7)");
+    }
+
+    #[test]
+    fn test_since_expr_default() {
+        let r = since_expr("");
+        assert_eq!(r, "now() - toIntervalHour(1)");
+    }
+
+    #[test]
+    fn test_behavior_score_zero_destinations() {
+        assert_eq!(behavior_score(0, 0, 0, 0, 0), 0.0);
+    }
+
+    #[test]
+    fn test_behavior_score_normal() {
+        // Low novelty, moderate diversity, low intensity
+        let score = behavior_score(1, 20, 5, 100, 10);
+        assert!(score < 50.0);
+    }
+
+    #[test]
+    fn test_behavior_score_high_novelty() {
+        let score = behavior_score(10, 10, 2, 10, 5);
+        // 10/10 * 50 + diversity + intensity = ~50+
+        assert!(score > 50.0);
+    }
+
+    #[test]
+    fn test_behavior_score_capped() {
+        let score = behavior_score(100, 100, 50, 10, 1000);
+        assert!(score <= 100.0);
+    }
+
+    #[test]
+    fn test_identify_device_model_xiaomi_mac() {
+        let model = identify_device_model(&[], &["miui.com".into()], "aa:80:a0:00:00:00", "");
+        assert!(!model.is_empty());
+    }
+
+    #[test]
+    fn test_identify_device_model_apple() {
+        let model = identify_device_model(&[], &["apple.com".into(), "icloud.com".into()], "", "");
+        // Without specific UA, it should fall through to a generic match or empty
+        // The function checks combined domains first
+        assert!(model.is_empty() || model.contains("iPhone") || model.contains("Mac") || model.contains("iPad"));
+    }
+
+    #[test]
+    fn test_identify_device_model_windows() {
+        let model = identify_device_model(&[], &[], "", "Mozilla/5.0 Windows NT 10.0");
+        assert_eq!(model, "Windows 10/11");
+    }
+
+    #[test]
+    fn test_profile_device_mac_prefix() {
+        let (dev_type, os, conf) = profile_device(&[], &[], "aa:80:a0:29:4e:0a");
+        assert_eq!(dev_type, "Xiaomi");
+        assert_eq!(os, "Android");
+        assert_eq!(conf, 0.9);
+    }
+
+    #[test]
+    fn test_profile_device_apple_mac() {
+        let (dev_type, os, conf) = profile_device(&[], &[], "f0:18:98:00:00:00");
+        assert_eq!(dev_type, "Apple 设备");
+        assert_eq!(os, "iOS/macOS");
+        assert!(conf > 0.5);
+    }
+
+    #[test]
+    fn test_profile_device_dns_signals() {
+        let (dev_type, os, _) = profile_device(&[], &["miui.com".into(), "icloud.com".into()], "");
+        // Xiaomi signals detected
+        assert_eq!(dev_type, "Xiaomi");
+        assert_eq!(os, "Android");
+    }
+}

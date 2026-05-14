@@ -92,14 +92,84 @@ pub fn parse_connect_request(buf: &[u8]) -> Option<String> {
     if host.is_empty() { None } else { Some(host.to_string()) }
 }
 
-#[test]
-fn test_http_parse() {
-    let req = b"GET /index.html HTTP/1.1\r\nHost: example.com\r\nUser-Agent: curl/8.0\r\n\r\n";
-    let parsed = parse_http_request(req).unwrap();
-    assert_eq!(parsed.method, "GET");
-    assert_eq!(parsed.host, "example.com");
-    assert_eq!(parsed.user_agent, "curl/8.0");
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-    let connect = b"CONNECT api.example.com:443 HTTP/1.1\r\n\r\n";
-    assert_eq!(parse_connect_request(connect).as_deref(), Some("api.example.com"));
+    #[test]
+    fn test_get_request() {
+        let req = b"GET /index.html HTTP/1.1\r\nHost: example.com\r\nUser-Agent: curl/8.0\r\n\r\n";
+        let parsed = parse_http_request(req).unwrap();
+        assert_eq!(parsed.method, "GET");
+        assert_eq!(parsed.host, "example.com");
+        assert_eq!(parsed.user_agent, "curl/8.0");
+        assert_eq!(parsed.uri_stem, "/index.html");
+    }
+
+    #[test]
+    fn test_post_request() {
+        let req = b"POST /api/data HTTP/1.1\r\nHost: example.com\r\nUser-Agent: test/1.0\r\nContent-Length: 3\r\n\r\nabc";
+        let parsed = parse_http_request(req).unwrap();
+        assert_eq!(parsed.method, "POST");
+        assert_eq!(parsed.host, "example.com");
+    }
+
+    #[test]
+    fn test_put_request() {
+        let req = b"PUT /resource HTTP/1.1\r\nHost: example.com\r\n\r\n";
+        let parsed = parse_http_request(req).unwrap();
+        assert_eq!(parsed.method, "PUT");
+    }
+
+    #[test]
+    fn test_delete_request() {
+        let req = b"DELETE /resource/123 HTTP/1.1\r\nHost: example.com\r\n\r\n";
+        let parsed = parse_http_request(req).unwrap();
+        assert_eq!(parsed.method, "DELETE");
+    }
+
+    #[test]
+    fn test_connect_request_with_host() {
+        let req = b"CONNECT api.example.com:443 HTTP/1.1\r\n\r\n";
+        assert_eq!(parse_connect_request(req).as_deref(), Some("api.example.com"));
+    }
+
+    #[test]
+    fn test_connect_request_no_port() {
+        let req = b"CONNECT example.com HTTP/1.1\r\n\r\n";
+        assert_eq!(parse_connect_request(req).as_deref(), Some("example.com"));
+    }
+
+    #[test]
+    fn test_not_connect() {
+        assert!(parse_connect_request(b"GET / HTTP/1.1\r\n").is_none());
+    }
+
+    #[test]
+    fn test_empty_buffer() {
+        assert!(parse_http_request(b"").is_none());
+        assert!(parse_http_request(b"short").is_none());
+    }
+
+    #[test]
+    fn test_binary_data() {
+        let bin = &[0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09];
+        assert!(parse_http_request(bin).is_none());
+    }
+
+    #[test]
+    fn test_multiple_headers() {
+        let req = b"GET / HTTP/1.1\r\nHost: example.com\r\nUser-Agent: curl/8.0\r\nAccept: */*\r\nX-Custom: value\r\n\r\n";
+        let parsed = parse_http_request(req).unwrap();
+        assert_eq!(parsed.host, "example.com");
+        assert_eq!(parsed.user_agent, "curl/8.0");
+    }
+
+    #[test]
+    fn test_missing_host_header() {
+        let req = b"GET / HTTP/1.1\r\nUser-Agent: curl/8.0\r\n\r\n";
+        let parsed = parse_http_request(req).unwrap();
+        assert_eq!(parsed.host, "");
+        assert_eq!(parsed.user_agent, "curl/8.0");
+    }
 }

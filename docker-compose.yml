@@ -1,0 +1,47 @@
+services:
+  clickhouse:
+    image: clickhouse/clickhouse-server:24.3
+    ports:
+      - "8123:8123"   # HTTP
+      - "9000:9000"   # Native
+    volumes:
+      - clickhouse-data:/var/lib/clickhouse
+      - ./deploy/clickhouse-init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8123/ping"]
+      interval: 5s
+      retries: 10
+    restart: unless-stopped
+
+  ingest:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.ingest
+    ports:
+      - "9100:9100"       # Agent TCP
+      - "2055:2055/udp"   # Python agent UDP
+    environment:
+      RUST_LOG: info
+    command: ["/app/ingest", "--clickhouse", "clickhouse:8123"]
+    depends_on:
+      clickhouse:
+        condition: service_healthy
+    restart: unless-stopped
+
+  api:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.api
+    ports:
+      - "8970:8970"
+    environment:
+      RUST_LOG: info
+      API_KEY: ${API_KEY:-traffic-admin-docker}
+    command: ["/app/api", "--clickhouse", "http://clickhouse:8123", "--listen", "0.0.0.0:8970"]
+    depends_on:
+      clickhouse:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  clickhouse-data:

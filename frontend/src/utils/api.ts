@@ -74,11 +74,42 @@ export interface ApiResponse<T> {
   error?: string;
 }
 
-async function fetchApi<T>(path: string): Promise<T> {
-  const resp = await fetch(`${API_BASE}${path}`);
-  if (!resp.ok) throw new Error(`HTTP ${resp.status}: ${resp.statusText}`);
-  const json: ApiResponse<T> = await resp.json();
-  if (!json.success) throw new Error(json.error || 'API error');
+export class ApiError extends Error {
+  constructor(public status: number, message: string) {
+    super(message);
+    this.name = 'ApiError';
+  }
+}
+
+async function fetchApi<T>(path: string, options?: RequestInit): Promise<T> {
+  const url = `${API_BASE}${path}`;
+  let resp: Response;
+  try {
+    resp = await fetch(url, {
+      ...options,
+      headers: { 'Content-Type': 'application/json', ...options?.headers },
+    });
+  } catch (err) {
+    throw new ApiError(0, `Network error: ${err instanceof Error ? err.message : String(err)}`);
+  }
+
+  if (!resp.ok) {
+    let body = '';
+    try { body = await resp.text(); } catch { /* ignore */ }
+    throw new ApiError(resp.status, `HTTP ${resp.status}: ${resp.statusText}${body ? ` - ${body.slice(0, 200)}` : ''}`);
+  }
+
+  let json: ApiResponse<T>;
+  try {
+    json = await resp.json();
+  } catch (err) {
+    throw new ApiError(resp.status, `Invalid JSON response: ${err instanceof Error ? err.message : String(err)}`);
+  }
+
+  if (!json.success) {
+    throw new ApiError(resp.status, json.error || 'Unknown API error');
+  }
+
   return json.data;
 }
 

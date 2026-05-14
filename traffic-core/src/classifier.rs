@@ -163,14 +163,69 @@ pub fn infer_device(sni: &str, dns: &str, mac: &str) -> String {
     String::new()
 }
 
-#[test]
-fn test_classify() {
-    let r = classify("www.youtube.com", "", 443);
-    assert_eq!(r.app_name, "YouTube");
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-    let r = classify("", "weixin.qq.com", 443);
-    assert_eq!(r.app_name, "微信");
+    #[test]
+    fn test_classify_sni() {
+        assert_eq!(classify("www.youtube.com", "", 443).app_name, "YouTube");
+        assert_eq!(classify("chatgpt.com", "", 443).app_name, "ChatGPT");
+        assert_eq!(classify("anthropic.com", "", 443).app_name, "Claude");
+    }
 
-    let r = classify("", "unknown.xyz.com", 443);
-    assert_eq!(r.app_name, "Unknown");
+    #[test]
+    fn test_classify_dns() {
+        let r = classify("", "weixin.qq.com", 443);
+        assert_eq!(r.app_name, "微信");
+    }
+
+    #[test]
+    fn test_classify_combined_prefers_first_match() {
+        let r = classify("www.youtube.com", "weixin.qq.com", 443);
+        assert_eq!(r.app_name, "YouTube");
+    }
+
+    #[test]
+    fn test_classify_case_insensitive() {
+        assert_eq!(classify("WWW.YOUTUBE.COM", "", 443).app_name, "YouTube");
+        assert_eq!(classify("Api.GitHub.Com", "", 443).app_name, "GitHub");
+    }
+
+    #[test]
+    fn test_classify_unknown() {
+        let r = classify("", "nonexistent-domain-xyz.example", 443);
+        assert_eq!(r.app_name, "Unknown");
+        assert_eq!(r.confidence, 0.0);
+    }
+
+    #[test]
+    fn test_classify_by_port() {
+        let r = classify("", "", 443);
+        assert_eq!(r.app_name, "Unknown");
+    }
+
+    #[test]
+    fn test_infer_device_mac_prefix() {
+        assert_eq!(infer_device("", "", "aa:80:a0:00:00:00"), "Xiaomi");
+        assert_eq!(infer_device("", "", "de:2c:28:00:00:00"), "Xiaomi");
+        assert_eq!(infer_device("", "", "f0:18:98:00:00:00"), "Apple");
+        assert_eq!(infer_device("", "", "ff:ff:ff:00:00:00"), "");
+    }
+
+    #[test]
+    fn test_infer_device_dns_patterns() {
+        assert_eq!(infer_device("", "miui.com", ""), "Xiaomi");
+        assert_eq!(infer_device("", "icloud.com", ""), "Apple");
+        assert_eq!(infer_device("", "wns.windows.com", ""), "Microsoft Windows");
+    }
+
+    #[test]
+    fn test_rule_coverage() {
+        // Spot-check a few categories
+        assert_eq!(classify("", "douyin.com", 443).app_name, "抖音/TikTok");
+        assert_eq!(classify("", "github.com", 443).app_name, "GitHub");
+        assert_eq!(classify("", "taobao.com", 443).app_name, "淘宝/天猫");
+        assert_eq!(classify("", "amap.com", 443).app_name, "高德地图");
+    }
 }
