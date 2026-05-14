@@ -21,5 +21,5 @@ utoipa = "5"
 utoipa-swagger-ui = { version = "9", features = ["actix-web"] }
 reqwest = { version = "0.12", features = ["json"] }
 jsonwebtoken = "10"
-sha2 = "0.10"
+sha2 = "0.11"
 hex = "0.4"
