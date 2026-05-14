@@ -14,7 +14,8 @@ pub async fn get_stats(state: web::Data<Arc<AppState>>, q: web::Query<TimeQuery>
     let se = since_expr(q.since.as_deref().unwrap_or("24h"));
     let sql = format!(
         "SELECT count() as total_flows,sum(bytes_up+bytes_down) as total_bytes,\
-        countDistinct(app_id) as apps,countDistinct(src_ip) as devices,\
+        countDistinct(app_id) as apps,\
+        countDistinct(if(src_ip LIKE '192.168.%' OR src_ip LIKE '10.%', src_ip, NULL)) as devices,\
         countDistinct(if(sni!='',sni,NULL)) as snis,\
         countDistinct(if(dns_domain!='',dns_domain,NULL)) as domains,\
         count()/greatest(1,dateDiff('second',min(timestamp),max(timestamp))) as fps \

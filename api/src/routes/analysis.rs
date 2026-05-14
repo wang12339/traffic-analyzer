@@ -262,9 +262,26 @@ pub async fn get_insights(state: web::Data<Arc<AppState>>) -> HttpResponse {
             entry.5.insert(dns);
         }
     }
+    // Deduplicate by MAC: keep the IP with most traffic for each MAC
+    let mut mac_primary: HashMap<String, (String, f64)> = HashMap::new(); // MAC → (primary_IP, max_bytes)
+    for (ip, (_mac, _apps, _domains, bytes, _flows, _dest_set)) in &device_map {
+        let key = _mac.clone();
+        let entry = mac_primary.entry(key).or_insert_with(|| (ip.clone(), 0.0));
+        if *bytes > entry.1 {
+            *entry = (ip.clone(), *bytes);
+        }
+    }
+    let primary_ips: HashSet<String> = mac_primary.values().map(|(ip, _)| ip.clone()).collect();
+    let proxy_macs: HashSet<&str> = ["82:75:35", "e2:08:f4", "5a:e2:02"].iter().cloned().collect();
+
     let mut device_profiles = Vec::new();
     let mut alerts = Vec::new();
     for (ip, (mac, apps, _domains, bytes, flows, dest_set)) in &device_map {
+        let mac_prefix = if mac.len() >= 8 { &mac[..8] } else { "" };
+        // Skip non-primary IPs (same MAC, different IP) and proxy virtual IPs
+        if !primary_ips.contains(ip) || proxy_macs.contains(mac_prefix) {
+            continue;
+        }
         let dests: Vec<String> = dest_set.iter().cloned().collect();
         let uniq_apps: Vec<String> = {
             let mut s: Vec<String> = apps.clone();
