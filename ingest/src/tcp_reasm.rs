@@ -1,9 +1,9 @@
 //! TCP stream reassembly and TLS ClientHello extraction.
 //! Tracks per-connection state so we can handle fragmented TLS handshakes.
 
+use crate::tls_parser::{self, TlsClientHello, TlsServerHello};
 use std::collections::HashMap;
 use traffic_core::FlowKey;
-use crate::tls_parser::{self, TlsClientHello, TlsServerHello};
 
 /// Minimum bytes needed for a TLS record header (5 bytes).
 const TLS_HEADER_LEN: usize = 5;
@@ -51,7 +51,9 @@ pub struct TcpReassembler {
 
 impl TcpReassembler {
     pub fn new() -> Self {
-        Self { connections: HashMap::new() }
+        Self {
+            connections: HashMap::new(),
+        }
     }
 
     /// Process packets in the context of a known flow direction.
@@ -61,9 +63,12 @@ impl TcpReassembler {
         &mut self,
         key: &FlowKey,
         payload: &[u8],
-        src_is_client: bool,  // true = this segment came from the client side
+        src_is_client: bool, // true = this segment came from the client side
     ) -> Option<(TlsClientHello, TlsServerHello)> {
-        let state = self.connections.entry(key.clone()).or_insert_with(TcpState::new);
+        let state = self
+            .connections
+            .entry(key.clone())
+            .or_insert_with(TcpState::new);
 
         // Track bytes per direction
         let buf = if src_is_client {
@@ -91,7 +96,10 @@ impl TcpReassembler {
         }
 
         // Try to parse server hello from downstream
-        if !state.server_hello_done && !src_is_client && state.downstream_buf.len() >= TLS_HEADER_LEN {
+        if !state.server_hello_done
+            && !src_is_client
+            && state.downstream_buf.len() >= TLS_HEADER_LEN
+        {
             if let Some(sh) = tls_parser::parse_server_hello(&state.downstream_buf) {
                 state.server_hello = Some(sh);
                 state.server_hello_done = true;
@@ -111,15 +119,20 @@ impl TcpReassembler {
     }
 
     /// Remove and return state for a terminated connection.
-    pub fn remove(&mut self, key: &FlowKey) -> Option<(u64, u64, Option<TlsClientHello>, Option<TlsServerHello>)> {
-        self.connections.remove(key).map(|s| {
-            (s.up_bytes, s.down_bytes, s.client_hello, s.server_hello)
-        })
+    pub fn remove(
+        &mut self,
+        key: &FlowKey,
+    ) -> Option<(u64, u64, Option<TlsClientHello>, Option<TlsServerHello>)> {
+        self.connections
+            .remove(key)
+            .map(|s| (s.up_bytes, s.down_bytes, s.client_hello, s.server_hello))
     }
 
     /// Get bytes tracked for a connection without consuming state.
     pub fn get_bytes(&self, key: &FlowKey) -> Option<(u64, u64)> {
-        self.connections.get(key).map(|s| (s.up_bytes, s.down_bytes))
+        self.connections
+            .get(key)
+            .map(|s| (s.up_bytes, s.down_bytes))
     }
 
     /// Clean up state for expired flows.

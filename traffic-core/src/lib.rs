@@ -1,6 +1,6 @@
-use std::net::IpAddr;
-use serde::{Serialize, Deserialize};
 use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
+use std::net::IpAddr;
 
 pub mod classifier;
 pub use classifier::Classification;
@@ -14,7 +14,7 @@ pub const UDP: u8 = 17;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PacketFrame {
     pub timestamp_ns: u64,
-    pub src_ip: Vec<u8>,       // 4 (IPv4) or 16 (IPv6) bytes
+    pub src_ip: Vec<u8>, // 4 (IPv4) or 16 (IPv6) bytes
     pub dst_ip: Vec<u8>,
     pub src_port: u16,
     pub dst_port: u16,
@@ -35,12 +35,24 @@ pub struct FlowKey {
 }
 
 impl FlowKey {
-    pub fn canonical(src_ip: IpAddr, dst_ip: IpAddr, src_port: Port, dst_port: Port, protocol: u8) -> Self {
+    pub fn canonical(
+        src_ip: IpAddr,
+        dst_ip: IpAddr,
+        src_port: Port,
+        dst_port: Port,
+        protocol: u8,
+    ) -> Self {
         let (a, pa, b, pb) = match (src_ip, src_port) < (dst_ip, dst_port) {
             true => (src_ip, src_port, dst_ip, dst_port),
             false => (dst_ip, dst_port, src_ip, src_port),
         };
-        Self { src_ip: a, dst_ip: b, src_port: pa, dst_port: pb, protocol }
+        Self {
+            src_ip: a,
+            dst_ip: b,
+            src_port: pa,
+            dst_port: pb,
+            protocol,
+        }
     }
 }
 
@@ -59,7 +71,7 @@ pub struct TlsMeta {
 pub struct HttpMeta {
     pub host: String,
     pub method: String,
-    pub uri_truncated: String,  // first 128 chars only, not stored long-term
+    pub uri_truncated: String, // first 128 chars only, not stored long-term
     pub user_agent: String,
 }
 

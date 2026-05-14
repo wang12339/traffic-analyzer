@@ -1,24 +1,24 @@
-mod tls_parser;
-mod tcp_reasm;
-mod flow_agg;
 mod classifier;
-mod storage;
 mod dns_parser;
+mod flow_agg;
 mod http_parser;
+mod storage;
+mod tcp_reasm;
+mod tls_parser;
 
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result};
 use clap::Parser;
-use traffic_core::PacketFrame;
 use tokio::io::AsyncReadExt;
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
 use tokio::time::sleep;
 use tracing::{error, info, warn};
 use tracing_subscriber::EnvFilter;
+use traffic_core::PacketFrame;
 
 use flow_agg::FlowAggregator;
 use storage::ClickStore;
@@ -41,7 +41,10 @@ struct Args {
 }
 
 fn now_ns() -> u64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_nanos() as u64
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos() as u64
 }
 
 #[tokio::main]
@@ -52,14 +55,21 @@ async fn main() -> Result<()> {
         .init();
 
     let args = Args::parse();
-    info!("Ingest server starting — listen={}, clickhouse={}", args.listen, args.clickhouse);
+    info!(
+        "Ingest server starting — listen={}, clickhouse={}",
+        args.listen, args.clickhouse
+    );
 
     let running = Arc::new(AtomicBool::new(true));
     let r = running.clone();
-    ctrlc::set_handler(move || { r.store(false, Ordering::SeqCst); }).expect("ctrlc handler");
+    ctrlc::set_handler(move || {
+        r.store(false, Ordering::SeqCst);
+    })
+    .expect("ctrlc handler");
 
     // ClickHouse storage
-    let store = ClickStore::new(&args.clickhouse, &args.db_name).await
+    let store = ClickStore::new(&args.clickhouse, &args.db_name)
+        .await
         .context("ClickHouse init")?;
     let store = Arc::new(store);
 
@@ -101,7 +111,8 @@ async fn main() -> Result<()> {
     let (pkt_tx, mut pkt_rx) = mpsc::channel::<(String, PacketFrame)>(FRAME_CHAN_SIZE);
 
     // Accept agent connections
-    let listener = TcpListener::bind(&args.listen).await
+    let listener = TcpListener::bind(&args.listen)
+        .await
         .context("bind listener")?;
     info!("Listening on {}", args.listen);
 
@@ -144,7 +155,10 @@ async fn main() -> Result<()> {
     });
 
     // Flow aggregation pipeline
-    let agg = Arc::new(tokio::sync::Mutex::new(FlowAggregator::new(FLOW_EXPIRE_SECS, store.clone())));
+    let agg = Arc::new(tokio::sync::Mutex::new(FlowAggregator::new(
+        FLOW_EXPIRE_SECS,
+        store.clone(),
+    )));
 
     let run_agg = running.clone();
     let agg_instance = agg.clone();

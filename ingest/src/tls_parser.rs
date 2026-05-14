@@ -43,7 +43,8 @@ pub fn parse_client_hello(buf: &[u8]) -> Option<TlsClientHello> {
         return None;
     }
 
-    let hs_len = (handshake[1] as usize) << 16 | (handshake[2] as usize) << 8 | handshake[3] as usize;
+    let hs_len =
+        (handshake[1] as usize) << 16 | (handshake[2] as usize) << 8 | handshake[3] as usize;
     if hs_len < 34 || hs_len > handshake.len() - 4 {
         return None;
     }
@@ -55,24 +56,35 @@ pub fn parse_client_hello(buf: &[u8]) -> Option<TlsClientHello> {
     let mut pos = 34; // version(2) + random(32)
 
     // Session ID
-    if pos >= ch.len() { return None; }
+    if pos >= ch.len() {
+        return None;
+    }
     let sid_len = ch[pos] as usize;
     pos += 1 + sid_len;
 
     // Cipher Suites
-    if pos + 2 > ch.len() { return None; }
+    if pos + 2 > ch.len() {
+        return None;
+    }
     let cs_len = u16::from_be_bytes([ch[pos], ch[pos + 1]]) as usize;
     pos += 2;
-    if pos + cs_len > ch.len() { return None; }
+    if pos + cs_len > ch.len() {
+        return None;
+    }
     let cipher_suites: Vec<u16> = if cs_len % 2 == 0 {
-        ch[pos..pos + cs_len].chunks(2).map(|c| u16::from_be_bytes([c[0], c[1]])).collect()
+        ch[pos..pos + cs_len]
+            .chunks(2)
+            .map(|c| u16::from_be_bytes([c[0], c[1]]))
+            .collect()
     } else {
         vec![]
     };
     pos += cs_len;
 
     // Compression Methods
-    if pos >= ch.len() { return None; }
+    if pos >= ch.len() {
+        return None;
+    }
     let comp_len = ch[pos] as usize;
     pos += 1 + comp_len;
 
@@ -94,7 +106,9 @@ pub fn parse_client_hello(buf: &[u8]) -> Option<TlsClientHello> {
     let ext_total_len = u16::from_be_bytes([ch[pos], ch[pos + 1]]) as usize;
     pos += 2;
     let ext_end = pos + ext_total_len;
-    if ext_end > ch.len() { return None; }
+    if ext_end > ch.len() {
+        return None;
+    }
 
     let mut sni = String::new();
     let mut extensions = Vec::with_capacity(32);
@@ -143,7 +157,13 @@ pub fn parse_client_hello(buf: &[u8]) -> Option<TlsClientHello> {
         pos += ext_len;
     }
 
-    let ja3 = compute_ja3(&tls_version, &cipher_suites, &extensions, &supported_groups, &ec_point_formats);
+    let ja3 = compute_ja3(
+        &tls_version,
+        &cipher_suites,
+        &extensions,
+        &supported_groups,
+        &ec_point_formats,
+    );
 
     Some(TlsClientHello {
         sni,
@@ -164,10 +184,26 @@ fn compute_ja3(
     points: &[u8],
 ) -> String {
     // JA3 format: version,ciphers;extensions;groups;points
-    let cs = ciphers.iter().map(|c| c.to_string()).collect::<Vec<_>>().join("-");
-    let exts = extensions.iter().map(|e| e.to_string()).collect::<Vec<_>>().join("-");
-    let grps = groups.iter().map(|g| g.to_string()).collect::<Vec<_>>().join("-");
-    let pts = points.iter().map(|p| p.to_string()).collect::<Vec<_>>().join("-");
+    let cs = ciphers
+        .iter()
+        .map(|c| c.to_string())
+        .collect::<Vec<_>>()
+        .join("-");
+    let exts = extensions
+        .iter()
+        .map(|e| e.to_string())
+        .collect::<Vec<_>>()
+        .join("-");
+    let grps = groups
+        .iter()
+        .map(|g| g.to_string())
+        .collect::<Vec<_>>()
+        .join("-");
+    let pts = points
+        .iter()
+        .map(|p| p.to_string())
+        .collect::<Vec<_>>()
+        .join("-");
 
     let raw = format!("{},{};{};{};{}", version, cs, exts, grps, pts);
     let hash = hex::encode(Sha256::digest(raw.as_bytes()));
@@ -187,13 +223,20 @@ pub fn parse_server_hello(buf: &[u8]) -> Option<TlsServerHello> {
         return None;
     }
     let tls_len = u16::from_be_bytes([buf[3], buf[4]]) as usize;
-    if tls_len < 4 || tls_len > buf.len() - 5 { return None; }
+    if tls_len < 4 || tls_len > buf.len() - 5 {
+        return None;
+    }
 
     let handshake = &buf[5..5 + tls_len];
-    if handshake.is_empty() || handshake[0] != TLS_HANDSHAKE_SERVER_HELLO { return None; }
+    if handshake.is_empty() || handshake[0] != TLS_HANDSHAKE_SERVER_HELLO {
+        return None;
+    }
 
-    let hs_len = (handshake[1] as usize) << 16 | (handshake[2] as usize) << 8 | handshake[3] as usize;
-    if hs_len < 38 || hs_len > handshake.len() - 4 { return None; }
+    let hs_len =
+        (handshake[1] as usize) << 16 | (handshake[2] as usize) << 8 | handshake[3] as usize;
+    if hs_len < 38 || hs_len > handshake.len() - 4 {
+        return None;
+    }
 
     let sh = &handshake[4..4 + hs_len];
     let tls_version = u16::from_be_bytes([sh[0], sh[1]]);
@@ -204,7 +247,11 @@ pub fn parse_server_hello(buf: &[u8]) -> Option<TlsServerHello> {
     if pos + 2 > sh.len() {
         let raw = format!("{},{};", tls_version, cipher_suite);
         let hash = hex::encode(Sha256::digest(raw.as_bytes()));
-        return Some(TlsServerHello { ja3s: hash, cipher_suite, tls_version });
+        return Some(TlsServerHello {
+            ja3s: hash,
+            cipher_suite,
+            tls_version,
+        });
     }
 
     let ext_len = u16::from_be_bytes([sh[pos], sh[pos + 1]]) as usize;
@@ -218,10 +265,18 @@ pub fn parse_server_hello(buf: &[u8]) -> Option<TlsServerHello> {
         pos += 4 + elen;
     }
 
-    let exts_str = exts.iter().map(|e| e.to_string()).collect::<Vec<_>>().join("-");
+    let exts_str = exts
+        .iter()
+        .map(|e| e.to_string())
+        .collect::<Vec<_>>()
+        .join("-");
     let raw = format!("{},{};{}", tls_version, cipher_suite, exts_str);
     let hash = hex::encode(Sha256::digest(raw.as_bytes()));
-    Some(TlsServerHello { ja3s: hash, cipher_suite, tls_version })
+    Some(TlsServerHello {
+        ja3s: hash,
+        cipher_suite,
+        tls_version,
+    })
 }
 
 #[cfg(test)]

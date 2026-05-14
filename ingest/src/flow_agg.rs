@@ -6,13 +6,13 @@ use std::collections::{HashMap, HashSet};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::sync::Arc;
 
-use chrono::DateTime;
-use traffic_core::{Classification, FlowKey, FlowRecord, PacketFrame, classifier};
-use tracing::{debug, info};
 use crate::dns_parser;
 use crate::http_parser;
 use crate::storage::ClickStore;
 use crate::tcp_reasm::TcpReassembler;
+use chrono::DateTime;
+use tracing::{debug, info};
+use traffic_core::{Classification, FlowKey, FlowRecord, PacketFrame, classifier};
 
 /// Per-flow state maintained during aggregation.
 #[derive(Debug)]
@@ -57,14 +57,26 @@ impl FlowState {
         Self {
             first_seen_ns: ts_ns,
             last_seen_ns: ts_ns,
-            packets_up: 0, packets_down: 0,
-            bytes_up: 0, bytes_down: 0,
-            pkt_size_hist_up: [0; 7], pkt_size_hist_down: [0; 7],
-            iat_sum_us: 0.0, iat_count: 0, last_pkt_time_ns: ts_ns,
-            sni: None, ja3: None, ja3s: None, tls_version: None,
-            dns_domain: None, http_host: None, http_method: None, http_ua: None,
+            packets_up: 0,
+            packets_down: 0,
+            bytes_up: 0,
+            bytes_down: 0,
+            pkt_size_hist_up: [0; 7],
+            pkt_size_hist_down: [0; 7],
+            iat_sum_us: 0.0,
+            iat_count: 0,
+            last_pkt_time_ns: ts_ns,
+            sni: None,
+            ja3: None,
+            ja3s: None,
+            tls_version: None,
+            dns_domain: None,
+            http_host: None,
+            http_method: None,
+            http_ua: None,
             classification: None,
-            src_mac: None, device_hostname: None,
+            src_mac: None,
+            device_hostname: None,
             finalized: false,
         }
     }
@@ -84,7 +96,8 @@ impl FlowState {
 
         if self.last_pkt_time_ns != 0 && ts_ns > self.last_pkt_time_ns {
             let iat_ns = ts_ns - self.last_pkt_time_ns;
-            if iat_ns < 10_000_000_000 { // ignore >10s gaps
+            if iat_ns < 10_000_000_000 {
+                // ignore >10s gaps
                 self.iat_sum_us += iat_ns as f64 / 1000.0;
                 self.iat_count += 1;
             }
@@ -113,9 +126,15 @@ impl FlowState {
 
         // Merge up/down histograms
         let mut hist = [0u32; 7];
-        for i in 0..7 { hist[i] = self.pkt_size_hist_up[i] + self.pkt_size_hist_down[i]; }
+        for i in 0..7 {
+            hist[i] = self.pkt_size_hist_up[i] + self.pkt_size_hist_down[i];
+        }
 
-        let iat_mean = if self.iat_count > 0 { self.iat_sum_us / self.iat_count as f64 } else { 0.0 };
+        let iat_mean = if self.iat_count > 0 {
+            self.iat_sum_us / self.iat_count as f64
+        } else {
+            0.0
+        };
 
         FlowRecord {
             timestamp: first,
@@ -125,7 +144,11 @@ impl FlowState {
             dst_ip: key.dst_ip.to_string(),
             src_port: key.src_port,
             dst_port: key.dst_port,
-            protocol: if key.protocol == 6 { "TCP".into() } else { "UDP".into() },
+            protocol: if key.protocol == 6 {
+                "TCP".into()
+            } else {
+                "UDP".into()
+            },
             sni: self.sni.clone().unwrap_or_default(),
             ja3: self.ja3.clone().unwrap_or_default(),
             dns_domain: self.dns_domain.clone().unwrap_or_default(),
@@ -175,20 +198,34 @@ impl FlowAggregator {
     }
 
     /// Process a single packet frame from the agent.
-    pub async fn process_packet(&mut self, ts_ns: u64, frame: &PacketFrame) -> Result<(), anyhow::Error> {
+    pub async fn process_packet(
+        &mut self,
+        ts_ns: u64,
+        frame: &PacketFrame,
+    ) -> Result<(), anyhow::Error> {
         let src_ip = ip_from_bytes(&frame.src_ip);
         let dst_ip = ip_from_bytes(&frame.dst_ip);
         let src_mac = mac_to_string(&frame.src_mac);
 
         // Track IP→MAC mapping
         if !src_mac.is_empty() {
-            self.ip_to_mac.insert(src_ip, (src_mac.clone(), String::new()));
+            self.ip_to_mac
+                .insert(src_ip, (src_mac.clone(), String::new()));
         }
 
         let is_up = true; // from agent's perspective, src is the client
-        let key = FlowKey::canonical(src_ip, dst_ip, frame.src_port, frame.dst_port, frame.protocol);
+        let key = FlowKey::canonical(
+            src_ip,
+            dst_ip,
+            frame.src_port,
+            frame.dst_port,
+            frame.protocol,
+        );
 
-        let state = self.flows.entry(key.clone()).or_insert_with(|| FlowState::new(ts_ns));
+        let state = self
+            .flows
+            .entry(key.clone())
+            .or_insert_with(|| FlowState::new(ts_ns));
         state.record_packet(ts_ns, frame.payload.len() + 40 + 20 + 14, is_up);
 
         // Store MAC on first packet
@@ -197,13 +234,16 @@ impl FlowAggregator {
         }
 
         // ─── L7 Analysis ───
-        if frame.protocol == 6 { // TCP
+        if frame.protocol == 6 {
+            // TCP
             // Determine if this packet is from client side
             let is_client_side = frame.src_port == key.src_port;
 
             // TCP reassembly for TLS
             if !frame.payload.is_empty() {
-                let tls_result = self.tcp_reasm.process_segment(&key, &frame.payload, is_client_side);
+                let tls_result =
+                    self.tcp_reasm
+                        .process_segment(&key, &frame.payload, is_client_side);
                 if let Some((ch, sh)) = tls_result {
                     if !ch.sni.is_empty() {
                         state.sni = Some(ch.sni.clone());
@@ -212,7 +252,16 @@ impl FlowAggregator {
                         state.ja3 = Some(ch.ja3.clone());
                     }
                     if sh.tls_version != 0 {
-                        state.tls_version = Some(format!("TLSv1.{}", if sh.tls_version == 0x0304 { 3 } else if sh.tls_version == 0x0303 { 2 } else { 1 }));
+                        state.tls_version = Some(format!(
+                            "TLSv1.{}",
+                            if sh.tls_version == 0x0304 {
+                                3
+                            } else if sh.tls_version == 0x0303 {
+                                2
+                            } else {
+                                1
+                            }
+                        ));
                         state.ja3s = Some(sh.ja3s.clone());
                     }
                 }
@@ -238,7 +287,8 @@ impl FlowAggregator {
                     }
                 }
             }
-        } else if frame.protocol == 17 { // UDP
+        } else if frame.protocol == 17 {
+            // UDP
             // DNS parsing
             if (frame.dst_port == 53 || frame.src_port == 53) && !frame.payload.is_empty() {
                 let dns = dns_parser::parse_dns_query(&frame.payload);
@@ -265,11 +315,14 @@ impl FlowAggregator {
     pub async fn flush_expired(&mut self, now_ns: u64) -> Result<(), anyhow::Error> {
         let idle_cutoff = now_ns - self.expire_secs * 1_000_000_000;
         let max_lifetime = 60_000_000_000u64; // 60 seconds max lifetime for any flow
-        let expired_keys: Vec<FlowKey> = self.flows.iter()
+        let expired_keys: Vec<FlowKey> = self
+            .flows
+            .iter()
             .filter(|(_, s)| {
                 // Expire if idle too long OR lived too long (force flush active flows)
-                !s.finalized && (s.last_seen_ns < idle_cutoff ||
-                    now_ns.saturating_sub(s.first_seen_ns) > max_lifetime)
+                !s.finalized
+                    && (s.last_seen_ns < idle_cutoff
+                        || now_ns.saturating_sub(s.first_seen_ns) > max_lifetime)
             })
             .map(|(k, _)| k.clone())
             .collect();
@@ -280,13 +333,20 @@ impl FlowAggregator {
             }
             return Ok(());
         }
-        tracing::info!("Flushing {} expired flows (active: {})", expired_keys.len(), self.flows.len());
+        tracing::info!(
+            "Flushing {} expired flows (active: {})",
+            expired_keys.len(),
+            self.flows.len()
+        );
 
         let mut records = Vec::with_capacity(expired_keys.len());
         for key in &expired_keys {
             if let Some(mut state) = self.flows.remove(key) {
                 state.finalized = true;
-                let app = state.classification.clone().unwrap_or_else(|| Classification::unknown());
+                let app = state
+                    .classification
+                    .clone()
+                    .unwrap_or_else(|| Classification::unknown());
                 records.push(state.to_flow_record(key, &app));
                 self.tcp_reasm.remove(key);
             }
@@ -294,7 +354,11 @@ impl FlowAggregator {
 
         if !records.is_empty() {
             self.flow_counter += records.len() as u64;
-            debug!("Flushing {} flow records (total: {})", records.len(), self.flow_counter);
+            debug!(
+                "Flushing {} flow records (total: {})",
+                records.len(),
+                self.flow_counter
+            );
 
             // Batch write to ClickHouse
             let store = self.store.clone();
@@ -314,7 +378,10 @@ impl FlowAggregator {
         let mut records = Vec::with_capacity(keys.len());
         for key in &keys {
             if let Some(state) = self.flows.remove(key) {
-                let app = state.classification.clone().unwrap_or_else(|| Classification::unknown());
+                let app = state
+                    .classification
+                    .clone()
+                    .unwrap_or_else(|| Classification::unknown());
                 records.push(state.to_flow_record(key, &app));
             }
         }
@@ -343,8 +410,10 @@ fn ip_from_bytes(bytes: &[u8]) -> IpAddr {
 }
 
 fn mac_to_string(mac: &[u8; 6]) -> String {
-    format!("{:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}",
-            mac[0], mac[1], mac[2], mac[3], mac[4], mac[5])
+    format!(
+        "{:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}",
+        mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]
+    )
 }
 
 #[cfg(test)]
@@ -424,14 +493,16 @@ mod tests {
     #[test]
     fn test_histogram_merge_in_to_flow_record() {
         let mut state = FlowState::new(1_000_000);
-        state.record_packet(1_000_001, 50,  true);   // bucket 0 up
-        state.record_packet(1_000_002, 200, false);   // bucket 2 down
-        state.record_packet(1_000_003, 1000, false);  // bucket 4 down
+        state.record_packet(1_000_001, 50, true); // bucket 0 up
+        state.record_packet(1_000_002, 200, false); // bucket 2 down
+        state.record_packet(1_000_003, 1000, false); // bucket 4 down
 
         let key = FlowKey::canonical(
             IpAddr::V4(Ipv4Addr::new(192, 168, 1, 2)),
             IpAddr::V4(Ipv4Addr::new(93, 184, 216, 34)),
-            54321, 443, 6,
+            54321,
+            443,
+            6,
         );
         let app = Classification::unknown();
         let record = state.to_flow_record(&key, &app);
@@ -455,7 +526,9 @@ mod tests {
         let key = FlowKey::canonical(
             IpAddr::V4(Ipv4Addr::new(10, 0, 0, 5)),
             IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8)),
-            12345, 443, 6,
+            12345,
+            443,
+            6,
         );
         let app = Classification::named(1, "YouTube", "Video", 0.85);
         let record = state.to_flow_record(&key, &app);
@@ -500,7 +573,9 @@ mod tests {
         let v4 = ip_from_bytes(&[192, 168, 1, 1]);
         assert_eq!(v4.to_string(), "192.168.1.1");
 
-        let v6 = ip_from_bytes(&[0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x01]);
+        let v6 = ip_from_bytes(&[
+            0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x01,
+        ]);
         assert_eq!(v6.to_string(), "2001:db8::1");
 
         // Invalid length -> 0.0.0.0

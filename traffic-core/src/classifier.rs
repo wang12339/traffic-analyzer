@@ -12,120 +12,285 @@ pub struct Classification {
 
 impl Classification {
     pub fn unknown() -> Self {
-        Self { app_id: 0, app_name: "Unknown".into(), app_category: "Unknown".into(), confidence: 0.0 }
+        Self {
+            app_id: 0,
+            app_name: "Unknown".into(),
+            app_category: "Unknown".into(),
+            confidence: 0.0,
+        }
     }
     pub fn named(id: u32, name: &str, cat: &str, conf: f32) -> Self {
-        Self { app_id: id, app_name: name.into(), app_category: cat.into(), confidence: conf }
+        Self {
+            app_id: id,
+            app_name: name.into(),
+            app_category: cat.into(),
+            confidence: conf,
+        }
     }
 }
 
 static RULES: &[Rule] = &[
     // ── AI Services ──
-    Rule(50, "ChatGPT", "AI", &["chatgpt.com", "openai.com", "oaistatic.com"]),
-    Rule(51, "Claude", "AI", &["anthropic.com", "claude.ai", "claudeusercontent.com"]),
+    Rule(
+        50,
+        "ChatGPT",
+        "AI",
+        &["chatgpt.com", "openai.com", "oaistatic.com"],
+    ),
+    Rule(
+        51,
+        "Claude",
+        "AI",
+        &["anthropic.com", "claude.ai", "claudeusercontent.com"],
+    ),
     Rule(52, "DeepSeek", "AI", &["deepseek.com"]),
-    Rule(53, "Gemini", "AI", &["gemini.google.com", "bard.google.com"]),
+    Rule(
+        53,
+        "Gemini",
+        "AI",
+        &["gemini.google.com", "bard.google.com"],
+    ),
     Rule(54, "Kimi", "AI", &["kimi.moonshot.cn", "moonshot.cn"]),
     Rule(55, "Coze", "AI", &["coze.com"]),
     Rule(56, "通义千问", "AI", &["tongyi.aliyun.com", "qwen.ai"]),
-
     // ── Video Streaming ──
-    Rule(1, "YouTube", "Video", &["youtube.com", "googlevideo.com", "ytimg.com", "withgoogle.com"]),
-    Rule(2, "Netflix", "Video", &["netflix.com", "nflxvideo.net", "nflximg.net", "nflxext.com"]),
-    Rule(3, "抖音/TikTok", "Video", &["douyin.com", "tiktok.com", "amemv.com", "douyinvod.com", "douyinpic.com", "byteoversea.com"]),
+    Rule(
+        1,
+        "YouTube",
+        "Video",
+        &[
+            "youtube.com",
+            "googlevideo.com",
+            "ytimg.com",
+            "withgoogle.com",
+        ],
+    ),
+    Rule(
+        2,
+        "Netflix",
+        "Video",
+        &["netflix.com", "nflxvideo.net", "nflximg.net", "nflxext.com"],
+    ),
+    Rule(
+        3,
+        "抖音/TikTok",
+        "Video",
+        &[
+            "douyin.com",
+            "tiktok.com",
+            "amemv.com",
+            "douyinvod.com",
+            "douyinpic.com",
+            "byteoversea.com",
+        ],
+    ),
     Rule(4, "Bilibili", "Video", &["bilibili.com", "hdslb.com"]),
     Rule(5, "爱奇艺", "Video", &["iqiyi.com", "qiyi.com"]),
     Rule(6, "腾讯视频", "Video", &["v.qq.com", "qqvideo"]),
     Rule(7, "优酷", "Video", &["youku.com", "ykimg.com"]),
     Rule(8, "芒果TV", "Video", &["mgtv.com"]),
     Rule(9, "Twitch", "Video", &["twitch.tv", "twitchcdn.net"]),
-
     // ── Social / Messaging ──
-    Rule(10, "微信", "Social", &["weixin.qq.com", "wechat.com", "weixinbridge.com"]),
+    Rule(
+        10,
+        "微信",
+        "Social",
+        &["weixin.qq.com", "wechat.com", "weixinbridge.com"],
+    ),
     Rule(11, "微博", "Social", &["weibo.com", "weibo.cn"]),
     Rule(12, "小红书", "Social", &["xiaohongshu.com", "xhscdn.com"]),
     Rule(13, "知乎", "Social", &["zhihu.com"]),
-    Rule(14, "Instagram", "Social", &["instagram.com", "cdninstagram.com"]),
-    Rule(15, "Twitter/X", "Social", &["twitter.com", "x.com", "twimg.com"]),
+    Rule(
+        14,
+        "Instagram",
+        "Social",
+        &["instagram.com", "cdninstagram.com"],
+    ),
+    Rule(
+        15,
+        "Twitter/X",
+        "Social",
+        &["twitter.com", "x.com", "twimg.com"],
+    ),
     Rule(16, "WhatsApp", "Social", &["whatsapp.com", "whatsapp.net"]),
-    Rule(17, "Telegram", "Social", &["telegram.org", "t.me", "cdn-telegram.org"]),
-    Rule(18, "Discord", "Social", &["discord.com", "discordapp.com", "discord.gg"]),
+    Rule(
+        17,
+        "Telegram",
+        "Social",
+        &["telegram.org", "t.me", "cdn-telegram.org"],
+    ),
+    Rule(
+        18,
+        "Discord",
+        "Social",
+        &["discord.com", "discordapp.com", "discord.gg"],
+    ),
     Rule(19, "Slack", "Social", &["slack.com", "slack-msgs.com"]),
-    Rule(20, "QQ", "Social", &["qq.com", "qzone.qq.com", "connect.qq.com"]),
-
+    Rule(
+        20,
+        "QQ",
+        "Social",
+        &["qq.com", "qzone.qq.com", "connect.qq.com"],
+    ),
     // ── Music ──
-    Rule(30, "QQ 音乐", "Music", &["y.qq.com", "qqmusic.qq.com", "qpic.cn", "gtimg.cn"]),
+    Rule(
+        30,
+        "QQ 音乐",
+        "Music",
+        &["y.qq.com", "qqmusic.qq.com", "qpic.cn", "gtimg.cn"],
+    ),
     Rule(31, "网易云音乐", "Music", &["163.com", "music.163"]),
     Rule(32, "Spotify", "Music", &["spotify.com", "scdn.co"]),
     Rule(33, "酷狗音乐", "Music", &["kugou.com"]),
     Rule(34, "酷我音乐", "Music", &["kuwo.cn"]),
-
     // ── E-commerce ──
     Rule(40, "淘宝/天猫", "Shopping", &["taobao.com", "tmall.com"]),
     Rule(41, "京东", "Shopping", &["jd.com", "jdpay.com"]),
-    Rule(42, "拼多多", "Shopping", &["pinduoduo.com", "yangkeduo.com"]),
+    Rule(
+        42,
+        "拼多多",
+        "Shopping",
+        &["pinduoduo.com", "yangkeduo.com"],
+    ),
     Rule(43, "Amazon", "Shopping", &["amazon.com"]),
     Rule(44, "美团", "Shopping", &["meituan.com", "dianping.com"]),
-
     // ── Payment ──
-    Rule(45, "支付宝", "Payment", &["alipay.com", "alipayobjects.com"]),
+    Rule(
+        45,
+        "支付宝",
+        "Payment",
+        &["alipay.com", "alipayobjects.com"],
+    ),
     Rule(46, "PayPal", "Payment", &["paypal.com"]),
-
     // ── Productivity ──
-    Rule(50, "钉钉", "Productivity", &["dingtalk.com", "ding.zj.gov.cn"]),
+    Rule(
+        50,
+        "钉钉",
+        "Productivity",
+        &["dingtalk.com", "ding.zj.gov.cn"],
+    ),
     Rule(51, "飞书", "Productivity", &["feishu.cn", "larksuite.com"]),
-    Rule(52, "Microsoft 365", "Productivity", &["office.com", "sharepoint.com", "outlook.com", "live.com"]),
+    Rule(
+        52,
+        "Microsoft 365",
+        "Productivity",
+        &["office.com", "sharepoint.com", "outlook.com", "live.com"],
+    ),
     Rule(53, "Notion", "Productivity", &["notion.com", "notion.so"]),
-
     // ── Navigation ──
     Rule(60, "高德地图", "Navigation", &["amap.com", "autonavi.com"]),
     Rule(61, "百度地图", "Navigation", &["map.baidu.com"]),
-    Rule(62, "Google Maps", "Navigation", &["maps.google.com", "googleapis.com/maps"]),
-
+    Rule(
+        62,
+        "Google Maps",
+        "Navigation",
+        &["maps.google.com", "googleapis.com/maps"],
+    ),
     // ── Browser ──
     Rule(70, "Microsoft Edge", "Browser", &["edge.microsoft.com"]),
-    Rule(71, "Chrome", "Browser", &["chrome.google.com", "update.googleapis.com"]),
+    Rule(
+        71,
+        "Chrome",
+        "Browser",
+        &["chrome.google.com", "update.googleapis.com"],
+    ),
     Rule(72, "Firefox", "Browser", &["firefox.com", "mozilla.org"]),
-
     // ── Search ──
     Rule(80, "Google", "Web", &["google.com", "gstatic.com"]),
     Rule(81, "Bing", "Web", &["bing.com"]),
     Rule(82, "百度", "Web", &["baidu.com", "bdstatic.com"]),
     Rule(83, "搜狗", "Web", &["sogou.com"]),
-
     // ── Developer ──
-    Rule(90, "GitHub", "Developer", &["github.com", "githubusercontent.com", "github.io"]),
+    Rule(
+        90,
+        "GitHub",
+        "Developer",
+        &["github.com", "githubusercontent.com", "github.io"],
+    ),
     Rule(91, "GitLab", "Developer", &["gitlab.com"]),
     Rule(92, "Docker", "Developer", &["docker.com", "docker.io"]),
-
     // ── Cloud / CDN ──
     Rule(100, "阿里云", "Cloud", &["aliyuncs.com", "aliyun.com"]),
     Rule(101, "腾讯云", "Cloud", &["qcloud.com", "tencentcloud.com"]),
     Rule(102, "AWS", "Cloud", &["amazonaws.com", "cloudfront.net"]),
-    Rule(103, "Google Cloud", "Cloud", &["googleapis.com", "gcr.io", "appspot.com"]),
-    Rule(104, "Azure", "Cloud", &["azure.com", "windows.net", "trafficmanager.net"]),
+    Rule(
+        103,
+        "Google Cloud",
+        "Cloud",
+        &["googleapis.com", "gcr.io", "appspot.com"],
+    ),
+    Rule(
+        104,
+        "Azure",
+        "Cloud",
+        &["azure.com", "windows.net", "trafficmanager.net"],
+    ),
     Rule(105, "Cloudflare", "CDN", &["cloudflare.com"]),
     Rule(106, "Akamai", "CDN", &["akamaized.net", "akamai.net"]),
     Rule(107, "字节跳动云", "Cloud", &["volces.com", "bytedance.com"]),
     Rule(108, "金山云", "Cloud", &["ksyun.com", "ksyuncdn.com"]),
-
     // ── System ──
-    Rule(110, "Windows Update", "System", &["windowsupdate.com", "update.microsoft.com", "wns.windows.com"]),
-    Rule(111, "Apple 系统服务", "System", &["apple.com", "icloud.com", "guzzoni.apple.com", "configuration.apple.com"]),
-    Rule(112, "Apple Push", "System", &["push.apple.com", "courier.push.apple.com", "iphone-ld.apple.com"]),
-    Rule(113, "小米 IoT", "IoT", &["mi.com", "xiaomi.net", "miui.com", "micloud.xiaomi"]),
-    Rule(114, "华为 HMS", "System", &["huawei.com", "hicloud.com", "hmscloud.com"]),
-
+    Rule(
+        110,
+        "Windows Update",
+        "System",
+        &[
+            "windowsupdate.com",
+            "update.microsoft.com",
+            "wns.windows.com",
+        ],
+    ),
+    Rule(
+        111,
+        "Apple 系统服务",
+        "System",
+        &[
+            "apple.com",
+            "icloud.com",
+            "guzzoni.apple.com",
+            "configuration.apple.com",
+        ],
+    ),
+    Rule(
+        112,
+        "Apple Push",
+        "System",
+        &[
+            "push.apple.com",
+            "courier.push.apple.com",
+            "iphone-ld.apple.com",
+        ],
+    ),
+    Rule(
+        113,
+        "小米 IoT",
+        "IoT",
+        &["mi.com", "xiaomi.net", "miui.com", "micloud.xiaomi"],
+    ),
+    Rule(
+        114,
+        "华为 HMS",
+        "System",
+        &["huawei.com", "hicloud.com", "hmscloud.com"],
+    ),
     // ── News ──
     Rule(120, "微软新闻", "News", &["msn.cn", "msn.com"]),
     Rule(121, "今日头条", "News", &["toutiao.com", "pstatp.com"]),
-
     // ── Finance ──
-    Rule(130, "加密货币", "Finance", &["hotcoins", "binance", "coinbase", "okx.com"]),
-
+    Rule(
+        130,
+        "加密货币",
+        "Finance",
+        &["hotcoins", "binance", "coinbase", "okx.com"],
+    ),
     // ── Analytics ──
     Rule(140, "Comscore", "Analytics", &["scorecardresearch.com"]),
-    Rule(141, "Google Analytics", "Analytics", &["google-analytics.com", "googletagmanager.com"]),
+    Rule(
+        141,
+        "Google Analytics",
+        "Analytics",
+        &["google-analytics.com", "googletagmanager.com"],
+    ),
 ];
 
 struct Rule(u32, &'static str, &'static str, &'static [&'static str]);
@@ -149,16 +314,37 @@ pub fn infer_device(sni: &str, dns: &str, mac: &str) -> String {
     let mac_lower = mac.to_lowercase();
     let mac_pref = if mac.len() >= 8 { &mac_lower[..8] } else { "" };
 
-    if mac_pref == "aa:80:a0" || mac_pref == "de:2c:28" { return "Xiaomi".into(); }
-    if mac_pref == "5e:8f:c9" || mac_pref == "6c:1f:f7" || mac_pref == "f0:18:98" { return "Apple".into(); }
-    if mac_pref == "ea:0c:af" { return "NRadio".into(); }
-    if mac_pref == "e2:08:f4" || mac_pref == "5a:e2:02" { return "Clash/Stash".into(); }
+    if mac_pref == "aa:80:a0" || mac_pref == "de:2c:28" {
+        return "Xiaomi".into();
+    }
+    if mac_pref == "5e:8f:c9" || mac_pref == "6c:1f:f7" || mac_pref == "f0:18:98" {
+        return "Apple".into();
+    }
+    if mac_pref == "ea:0c:af" {
+        return "NRadio".into();
+    }
+    if mac_pref == "e2:08:f4" || mac_pref == "5a:e2:02" {
+        return "Clash/Stash".into();
+    }
 
-    if combined.contains("miui") || combined.contains("micloud") { return "Xiaomi".into(); }
-    if combined.contains("apple.com") || combined.contains("icloud.com") || combined.contains("push.apple.com") { return "Apple".into(); }
-    if combined.contains("huawei") || combined.contains("hicloud") { return "Huawei".into(); }
-    if combined.contains("windowsupdate") || combined.contains("wns.windows") { return "Microsoft Windows".into(); }
-    if combined.contains("samsung") { return "Samsung".into(); }
+    if combined.contains("miui") || combined.contains("micloud") {
+        return "Xiaomi".into();
+    }
+    if combined.contains("apple.com")
+        || combined.contains("icloud.com")
+        || combined.contains("push.apple.com")
+    {
+        return "Apple".into();
+    }
+    if combined.contains("huawei") || combined.contains("hicloud") {
+        return "Huawei".into();
+    }
+    if combined.contains("windowsupdate") || combined.contains("wns.windows") {
+        return "Microsoft Windows".into();
+    }
+    if combined.contains("samsung") {
+        return "Samsung".into();
+    }
 
     String::new()
 }

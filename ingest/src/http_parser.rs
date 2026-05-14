@@ -7,7 +7,7 @@
 pub struct HttpRequestMeta {
     pub method: String,
     pub host: String,
-    pub uri_stem: String,    // first 64 chars of path, for classification only
+    pub uri_stem: String, // first 64 chars of path, for classification only
     pub user_agent: String,
 }
 
@@ -90,7 +90,11 @@ pub fn parse_connect_request(buf: &[u8]) -> Option<String> {
     let rest = s.trim_start_matches("CONNECT ");
     let host_port = rest.splitn(2, ' ').next()?;
     let host = host_port.split(':').next()?;
-    if host.is_empty() { None } else { Some(host.to_string()) }
+    if host.is_empty() {
+        None
+    } else {
+        Some(host.to_string())
+    }
 }
 
 #[cfg(test)]
@@ -132,7 +136,10 @@ mod tests {
     #[test]
     fn test_connect_request_with_host() {
         let req = b"CONNECT api.example.com:443 HTTP/1.1\r\n\r\n";
-        assert_eq!(parse_connect_request(req).as_deref(), Some("api.example.com"));
+        assert_eq!(
+            parse_connect_request(req).as_deref(),
+            Some("api.example.com")
+        );
     }
 
     #[test]
