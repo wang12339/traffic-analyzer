@@ -18,14 +18,32 @@ export function OverviewFull() {
     .sort((x: any, y: any) => y.flow_count - x.flow_count)
     .slice(0, 20);
 
+  const totalProto = (s.tcp_flows || 0) + (s.udp_flows || 0);
+  const tcpPct = totalProto > 0 ? ((s.tcp_flows || 0) / totalProto * 100) : 0;
+  const udpPct = totalProto > 0 ? ((s.udp_flows || 0) / totalProto * 100) : 0;
+
   return <div>
-    <div style={{display:'grid',gridTemplateColumns:'repeat(6,1fr)',gap:10,marginBottom:16}}>
+    <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:10,marginBottom:8}}>
       <KpiBox label="总流数" value={s.total_flows?.toLocaleString()} />
       <KpiBox label="流量" value={(s.total_bytes/1024/1024/1024).toFixed(2)+' GB'} />
       <KpiBox label="设备" value={s.unique_devices} />
+      <KpiBox label="吞吐" value={(s.throughput_mbps || 0).toFixed(2)+' Mbps'} color="var(--accent)" />
+    </div>
+    <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:10,marginBottom:16,fontSize:12}}>
       <KpiBox label="应用" value={s.active_apps} />
       <KpiBox label="域名" value={s.unique_snis} />
       <KpiBox label="速率" value={s.flows_per_sec?.toFixed(1)+'/s'} />
+      <div style={{background:'var(--bg-card)',borderRadius:10,border:'1px solid var(--border)',padding:'10px 14px'}}>
+        <div style={{fontSize:11,color:'var(--text-secondary)',marginBottom:4}}>协议分布</div>
+        <div style={{display:'flex',gap:0,height:8,borderRadius:4,overflow:'hidden'}}>
+          <div style={{flex:tcpPct,background:'var(--accent)'}} title={`TCP ${tcpPct.toFixed(0)}%`} />
+          <div style={{flex:Math.max(udpPct,1),background:'var(--warning)'}} title={`UDP ${udpPct.toFixed(0)}%`} />
+        </div>
+        <div style={{display:'flex',justifyContent:'space-between',marginTop:4,fontSize:11,color:'var(--text-secondary)'}}>
+          <span>TCP {s.tcp_flows?.toLocaleString()} ({(s.tcp_flows/totalProto*100).toFixed(0)}%)</span>
+          <span>UDP {s.udp_flows?.toLocaleString()} ({(s.udp_flows/totalProto*100).toFixed(0)}%)</span>
+        </div>
+      </div>
     </div>
     <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16,marginBottom:16}}>
       <div style={{background:'var(--bg-card)',borderRadius:12,border:'1px solid var(--border)',padding:16}}>

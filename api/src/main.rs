@@ -82,6 +82,10 @@ async fn main() -> anyhow::Result<()> {
                 "/api/device/{ip}/anomalies",
                 web::get().to(analysis::get_device_anomalies),
             )
+            .route(
+                "/api/device/{ip}/trends",
+                web::get().to(analysis::get_device_trends),
+            )
             .route("/api/insights", web::get().to(analysis::get_insights))
             .route(
                 "/api/analysis/wechat",

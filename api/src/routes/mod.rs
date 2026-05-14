@@ -139,6 +139,9 @@ pub struct StatsRow {
     pub snis: u64,
     pub domains: u64,
     pub fps: f64,
+    pub tcp_flows: u64,
+    pub udp_flows: u64,
+    pub throughput_mbps: f64,
 }
 #[derive(Serialize, ToSchema)]
 pub struct StatsResponse {
@@ -149,6 +152,9 @@ pub struct StatsResponse {
     pub unique_snis: u64,
     pub unique_domains: u64,
     pub flows_per_sec: f64,
+    pub tcp_flows: u64,
+    pub udp_flows: u64,
+    pub throughput_mbps: f64,
 }
 #[derive(Deserialize, Serialize, ToSchema)]
 pub struct FlowRow {

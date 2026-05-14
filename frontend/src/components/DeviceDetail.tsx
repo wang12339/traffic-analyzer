@@ -1,11 +1,12 @@
 import React, { useEffect, useState } from 'react';
+import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import { TYPE_ICONS, fmt } from './KpiBox';
 
 export function DeviceDetail({ ip, onBack }: { ip: string; onBack: () => void }) {
   const [profile, setProfile] = useState<any>(null);
   const [current, setCurrent] = useState<any[]>([]);
   const [anomalies, setAnomalies] = useState<any>(null);
-  const [history, setHistory] = useState<any[]>([]);
+  const [trends, setTrends] = useState<any[]>([]);
   const [appBreakdown, setAppBreakdown] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -16,13 +17,20 @@ export function DeviceDetail({ ip, onBack }: { ip: string; onBack: () => void })
       fetch(`/api/device/${ip}/current`).then(r=>r.json()),
       fetch(`/api/device/${ip}/anomalies`).then(r=>r.json()),
       fetch(`/api/device/${ip}`).then(r=>r.json()),
-    ]).then(([ins, cur, anm, det]) => {
+      fetch(`/api/device/${ip}/trends?since=2h`).then(r=>r.json()),
+    ]).then(([ins, cur, anm, det, trd]) => {
       if (ins.success) {
         const dev = ins.data.devices?.find((d: any) => d.ip === ip);
         if (dev) setProfile(dev);
       }
       if (cur.success) setCurrent(cur.data);
       if (anm.success) setAnomalies(anm.data);
+      if (trd.success) setTrends(trd.data.map((r: any) => ({
+        time: r.bucket?.substring(11, 16) || '',
+        mbps: (r.bytes / 125000 / 60).toFixed(3),
+        bytes: (r.bytes / 1024).toFixed(0),
+        flows: r.flows,
+      })));
       if (det.success) {
         const appMap: Record<string, {bytes:number; flows:number}> = {};
         for (const r of det.data) {
@@ -32,7 +40,6 @@ export function DeviceDetail({ ip, onBack }: { ip: string; onBack: () => void })
           appMap[key].flows += r.flow_count || 0;
         }
         setAppBreakdown(Object.entries(appMap).map(([k,v]) => ({name:k, ...v})).sort((a,b)=>b.bytes-a.bytes));
-        setHistory(det.data.slice(0, 30));
       }
       setLoading(false);
     }).catch(() => setLoading(false));
@@ -56,6 +63,24 @@ export function DeviceDetail({ ip, onBack }: { ip: string; onBack: () => void })
           </div>
         </div>
       </div>
+
+      {/* Bandwidth Trend Chart */}
+      {trends.length > 0 && (
+        <div style={{background:'var(--bg-card)', borderRadius:12, border:'1px solid var(--border)', padding:16, marginBottom:16}}>
+          <h3 style={{fontSize:14, fontWeight:600, marginBottom:10}}>流量趋势 (2h)</h3>
+          <ResponsiveContainer width="100%" height={160}>
+            <AreaChart data={trends}>
+              <defs>
+                <linearGradient id="colorBytes" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#6366f1" stopOpacity={0.3}/><stop offset="95%" stopColor="#6366f1" stopOpacity={0}/></linearGradient>
+              </defs>
+              <XAxis dataKey="time" tick={{fontSize:10, fill:'#8888a0'}} axisLine={false} tickLine={false} interval="preserveStartEnd" />
+              <YAxis tick={{fontSize:10, fill:'#8888a0'}} axisLine={false} tickLine={false} width={40} tickFormatter={(v:number) => `${v}KB`} />
+              <Tooltip contentStyle={{background:'#1a1a24', border:'1px solid #2a2a3a', borderRadius:8, fontSize:12}} labelFormatter={(l:any) => `时间: ${l}`} formatter={(v:any, n:string) => n==='mbps' ? [`${v} Mbps`, '吞吐'] : [`${v} KB`, '流量']} />
+              <Area type="monotone" dataKey="bytes" stroke="#6366f1" fill="url(#colorBytes)" strokeWidth={2} />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+      )}
 
       <div style={{background:'var(--bg-card)', borderRadius:12, border:'1px solid var(--border)', padding:16, marginBottom:16}}>
         <h3 style={{fontSize:14, fontWeight:600, marginBottom:10}}>当前活动</h3>
@@ -110,21 +135,6 @@ export function DeviceDetail({ ip, onBack }: { ip: string; onBack: () => void })
           <div style={{marginTop:8, fontSize:11, color:'var(--text-secondary)'}}>
             基线: {anomalies?.baseline_size || 0} 个已知目标
           </div>
-        </div>
-      </div>
-
-      <div style={{background:'var(--bg-card)', borderRadius:12, border:'1px solid var(--border)', padding:16}}>
-        <h3 style={{fontSize:14, fontWeight:600, marginBottom:10}}>历史活动 (24h)</h3>
-        <div style={{maxHeight:400, overflow:'auto'}}>
-          {history.map((r: any, i: number) => (
-            <div key={i} style={{display:'flex', justifyContent:'space-between', padding:'5px 0', fontSize:12, borderBottom:'1px solid var(--border)'}}>
-              <div style={{display:'flex', gap:8, overflow:'hidden', flex:1}}>
-                {r.app_name && <span style={{color:'var(--accent)', whiteSpace:'nowrap'}}>{r.app_name}</span>}
-                <span style={{overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>{r.sni || r.dns_domain || '(直接连接)'}</span>
-              </div>
-              <span style={{color:'var(--text-secondary)', whiteSpace:'nowrap', marginLeft:8}}>{fmt(r.total_bytes || 0)}</span>
-            </div>
-          ))}
         </div>
       </div>
     </div>

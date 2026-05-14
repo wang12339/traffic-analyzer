@@ -8,6 +8,9 @@ export interface Stats {
   unique_snis: number;
   unique_domains: number;
   flows_per_sec: number;
+  tcp_flows: number;
+  udp_flows: number;
+  throughput_mbps: number;
 }
 
 export interface FlowRecord {

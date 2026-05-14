@@ -18,6 +18,9 @@ pub async fn get_stats(state: web::Data<Arc<AppState>>, q: web::Query<TimeQuery>
         countDistinct(if(src_ip LIKE '192.168.%' OR src_ip LIKE '10.%', src_ip, NULL)) as devices,\
         countDistinct(if(sni!='',sni,NULL)) as snis,\
         countDistinct(if(dns_domain!='',dns_domain,NULL)) as domains,\
+        countIf(protocol='TCP') as tcp_flows,\
+        countIf(protocol='UDP') as udp_flows,\
+        sum(bytes_up+bytes_down)/greatest(1,dateDiff('second',min(timestamp),max(timestamp)))/125000 as throughput_mbps,\
         count()/greatest(1,dateDiff('second',min(timestamp),max(timestamp))) as fps \
         FROM {}.flows WHERE timestamp >= {}",
         state.database, se
@@ -30,6 +33,9 @@ pub async fn get_stats(state: web::Data<Arc<AppState>>, q: web::Query<TimeQuery>
             unique_devices: r.devices,
             unique_snis: r.snis,
             unique_domains: r.domains,
+            tcp_flows: r.tcp_flows,
+            udp_flows: r.udp_flows,
+            throughput_mbps: r.throughput_mbps,
             flows_per_sec: r.fps,
         })),
         Err(e) => HttpResponse::InternalServerError().json(api_err(&e)),

@@ -191,6 +191,35 @@ pub async fn get_device_anomalies(
 
 #[utoipa::path(
     get,
+    path = "/api/device/{ip}/trends",
+    params(
+        ("ip" = String, Path, description = "Device IP address"),
+        ("since" = Option<String>, Query, description = "Time range (e.g. 1h, 24h)"),
+    ),
+    responses(
+        (status = 200, description = "Device bandwidth timeline"),
+    ),
+    tag = "Devices"
+)]
+pub async fn get_device_trends(state: web::Data<Arc<AppState>>, path: web::Path<String>, q: web::Query<TimeQuery>) -> HttpResponse {
+    let ip = path.into_inner();
+    let se = since_expr(q.since.as_deref().unwrap_or("24h"));
+    let sql = format!(
+        "SELECT toStartOfMinute(timestamp) as bucket,\
+         sum(bytes_up+bytes_down) as bytes,count() as flows,\
+         countIf(protocol='TCP') as tcp,\
+         countIf(protocol='UDP') as udp \
+         FROM {}.flows WHERE src_ip='{}' AND timestamp>={} GROUP BY bucket ORDER BY bucket",
+        state.database, ip.replace('\'', "\\'"), se
+    );
+    match ch_query::<serde_json::Value>(&state, &sql).await {
+        Ok(rows) => HttpResponse::Ok().json(ApiResponse::ok(rows)),
+        Err(e) => HttpResponse::InternalServerError().json(api_err(&e)),
+    }
+}
+
+#[utoipa::path(
+    get,
     path = "/api/device/{ip}",
     params(
         ("ip" = String, Path, description = "Device IP address"),
