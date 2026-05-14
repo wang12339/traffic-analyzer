@@ -2,6 +2,7 @@
 name = "api"
 version.workspace = true
 edition.workspace = true
+description = "Traffic Analyzer - real-time network traffic analysis REST API for OpenWrt"
 
 [dependencies]
 traffic_core = { path = "../traffic-core" }

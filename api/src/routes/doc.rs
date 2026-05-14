@@ -6,6 +6,10 @@ use crate::routes::{agent, queries};
 
 #[derive(OpenApi)]
 #[openapi(
+    info(
+        title = "Traffic Analyzer",
+        description = "Real-time network traffic analysis API for OpenWrt"
+    ),
     paths(
         queries::get_stats,
         queries::get_flows,
