@@ -283,6 +283,15 @@ static RULES: &[Rule] = &[
         "Finance",
         &["hotcoins", "binance", "coinbase", "okx.com"],
     ),
+    // ── AI (new) ──
+    Rule(57, "Cursor", "AI", &["cursor.sh"]),
+    // ── ByteDance (抖音/头条/番茄) ──
+    Rule(150, "字节跳动 CDN", "Video", &["byteimg.com", "fqnovelpic.com", "qznovelvod.com", "snssdk.com"]),
+    Rule(151, "番茄小说", "Social", &["novelpic.com", "novelfeeds.com"]),
+    // ── Device/System ──
+    Rule(152, "Vivo 系统服务", "System", &["vivo.com.cn", "vivo.com"]),
+    // ── Network ──
+    Rule(154, "WPAD", "Network", &["wpad"]),
     // ── Analytics ──
     Rule(140, "Comscore", "Analytics", &["scorecardresearch.com"]),
     Rule(
