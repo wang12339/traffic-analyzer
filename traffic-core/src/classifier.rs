@@ -314,10 +314,17 @@ pub fn classify(sni: &str, dns: &str, port: u16) -> Classification {
             80 => return Classification::named(162, "HTTP", "Web", 0.6),
             443 => return Classification::named(163, "HTTPS", "Web", 0.6),
             22 => return Classification::named(164, "SSH", "Remote", 0.6),
-            21 => return Classification::named(165, "FTP", "File", 0.6),
+            21 | 20 => return Classification::named(165, "FTP", "File", 0.6),
+            69 => return Classification::named(191, "TFTP", "File", 0.6),
             25 => return Classification::named(166, "SMTP", "Email", 0.6),
+            465 => return Classification::named(192, "SMTPS", "Email", 0.6),
+            587 => return Classification::named(193, "SMTP-Submit", "Email", 0.6),
             110 => return Classification::named(167, "POP3", "Email", 0.6),
+            995 => return Classification::named(194, "POP3S", "Email", 0.6),
             143 => return Classification::named(168, "IMAP", "Email", 0.6),
+            993 => return Classification::named(195, "IMAPS", "Email", 0.6),
+            389 => return Classification::named(196, "LDAP", "Enterprise", 0.6),
+            636 => return Classification::named(197, "LDAPS", "Enterprise", 0.6),
             3389 => return Classification::named(169, "RDP", "Remote", 0.6),
             5900 | 5901 => return Classification::named(170, "VNC", "Remote", 0.6),
             3306 => return Classification::named(171, "MySQL", "Database", 0.6),
@@ -325,10 +332,30 @@ pub fn classify(sni: &str, dns: &str, port: u16) -> Classification {
             6379 => return Classification::named(173, "Redis", "Database", 0.6),
             27017 => return Classification::named(174, "MongoDB", "Database", 0.6),
             8080 => return Classification::named(175, "HTTP-Alt", "Web", 0.6),
+            9090 => return Classification::named(198, "HTTP-Alt2", "Web", 0.6),
             8443 => return Classification::named(176, "HTTPS-Alt", "Web", 0.6),
+            9443 => return Classification::named(199, "HTTPS-Alt2", "Web", 0.6),
             123 => return Classification::named(177, "NTP", "Network", 0.6),
             161 | 162 => return Classification::named(178, "SNMP", "Network", 0.6),
+            1900 => return Classification::named(180, "UPnP/SSDP", "Network", 0.6),
             5353 => return Classification::named(179, "mDNS", "Network", 0.6),
+            137 | 138 | 139 => return Classification::named(181, "NetBIOS", "Network", 0.6),
+            445 => return Classification::named(182, "SMB", "File", 0.6),
+            548 => return Classification::named(183, "AFP", "File", 0.6),
+            2049 => return Classification::named(184, "NFS", "File", 0.6),
+            1194 => return Classification::named(185, "OpenVPN", "VPN", 0.6),
+            500 | 4500 => return Classification::named(186, "IPsec", "VPN", 0.6),
+            1701 => return Classification::named(187, "L2TP", "VPN", 0.6),
+            1080 => return Classification::named(188, "SOCKS", "Proxy", 0.6),
+            3128 => return Classification::named(189, "Squid", "Proxy", 0.6),
+            7890 => return Classification::named(190, "Clash", "Proxy", 0.6),
+            3478 | 5349 => return Classification::named(200, "STUN/TURN", "VoIP", 0.6),
+            1935 => return Classification::named(201, "RTMP", "Streaming", 0.6),
+            554 => return Classification::named(202, "RTSP", "Streaming", 0.6),
+            5222 => return Classification::named(203, "XMPP", "Messaging", 0.6),
+            25565 => return Classification::named(204, "Minecraft", "Game", 0.6),
+            3074 => return Classification::named(205, "Xbox Live", "Game", 0.6),
+            27015 | 27016 => return Classification::named(206, "Steam", "Game", 0.6),
             _ => {}
         }
     }
@@ -439,6 +466,11 @@ mod tests {
         assert_eq!(classify("", "", 22).app_name, "SSH");
         assert_eq!(classify("", "", 3306).app_name, "MySQL");
         assert_eq!(classify("", "", 8080).app_name, "HTTP-Alt");
+        assert_eq!(classify("", "", 9090).app_name, "HTTP-Alt2");
+        assert_eq!(classify("", "", 1900).app_name, "UPnP/SSDP");
+        assert_eq!(classify("", "", 445).app_name, "SMB");
+        assert_eq!(classify("", "", 1194).app_name, "OpenVPN");
+        assert_eq!(classify("", "", 7890).app_name, "Clash");
         assert_eq!(classify("", "", 9999).app_name, "Unknown");
     }
 
