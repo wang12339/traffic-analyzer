@@ -170,7 +170,7 @@ impl ClickStore {
         let mut json_rows = Vec::with_capacity(records.len());
         for r in records {
             json_rows.push(serde_json::json!({
-                "timestamp": r.timestamp.format("%Y-%m-%d %H:%M:%S.%6f").to_string(),
+                "timestamp": r.timestamp.with_timezone(&chrono::Local).format("%Y-%m-%d %H:%M:%S.%6f").to_string(),
                 "first_seen": r.first_seen,
                 "last_seen": r.last_seen,
                 "src_ip": r.src_ip,

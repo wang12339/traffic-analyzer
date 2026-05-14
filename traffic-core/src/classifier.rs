@@ -296,12 +296,40 @@ static RULES: &[Rule] = &[
 struct Rule(u32, &'static str, &'static str, &'static [&'static str]);
 
 /// Classify based on SNI, DNS, and port.
-pub fn classify(sni: &str, dns: &str, _port: u16) -> Classification {
+/// Falls back to port-based service detection when L7 data is unavailable.
+pub fn classify(sni: &str, dns: &str, port: u16) -> Classification {
     let combined = format!("{} {}", sni.to_lowercase(), dns.to_lowercase());
 
     for rule in RULES {
         if rule.3.iter().any(|p| combined.contains(p)) {
             return Classification::named(rule.0, rule.1, rule.2, 0.85);
+        }
+    }
+
+    // Port-based fallback when SNI/DNS is unavailable
+    if sni.is_empty() && dns.is_empty() {
+        match port {
+            53 => return Classification::named(160, "DNS", "Network", 0.6),
+            67 | 68 => return Classification::named(161, "DHCP", "Network", 0.6),
+            80 => return Classification::named(162, "HTTP", "Web", 0.6),
+            443 => return Classification::named(163, "HTTPS", "Web", 0.6),
+            22 => return Classification::named(164, "SSH", "Remote", 0.6),
+            21 => return Classification::named(165, "FTP", "File", 0.6),
+            25 => return Classification::named(166, "SMTP", "Email", 0.6),
+            110 => return Classification::named(167, "POP3", "Email", 0.6),
+            143 => return Classification::named(168, "IMAP", "Email", 0.6),
+            3389 => return Classification::named(169, "RDP", "Remote", 0.6),
+            5900 | 5901 => return Classification::named(170, "VNC", "Remote", 0.6),
+            3306 => return Classification::named(171, "MySQL", "Database", 0.6),
+            5432 => return Classification::named(172, "PostgreSQL", "Database", 0.6),
+            6379 => return Classification::named(173, "Redis", "Database", 0.6),
+            27017 => return Classification::named(174, "MongoDB", "Database", 0.6),
+            8080 => return Classification::named(175, "HTTP-Alt", "Web", 0.6),
+            8443 => return Classification::named(176, "HTTPS-Alt", "Web", 0.6),
+            123 => return Classification::named(177, "NTP", "Network", 0.6),
+            161 | 162 => return Classification::named(178, "SNMP", "Network", 0.6),
+            5353 => return Classification::named(179, "mDNS", "Network", 0.6),
+            _ => {}
         }
     }
 
@@ -386,12 +414,6 @@ mod tests {
     }
 
     #[test]
-    fn test_classify_by_port() {
-        let r = classify("", "", 443);
-        assert_eq!(r.app_name, "Unknown");
-    }
-
-    #[test]
     fn test_infer_device_mac_prefix() {
         assert_eq!(infer_device("", "", "aa:80:a0:00:00:00"), "Xiaomi");
         assert_eq!(infer_device("", "", "de:2c:28:00:00:00"), "Xiaomi");
@@ -404,6 +426,24 @@ mod tests {
         assert_eq!(infer_device("", "miui.com", ""), "Xiaomi");
         assert_eq!(infer_device("", "icloud.com", ""), "Apple");
         assert_eq!(infer_device("", "wns.windows.com", ""), "Microsoft Windows");
+    }
+
+    #[test]
+    fn test_classify_by_port() {
+        assert_eq!(classify("", "", 443).app_name, "HTTPS");
+        assert_eq!(classify("", "", 80).app_name, "HTTP");
+        assert_eq!(classify("", "", 53).app_name, "DNS");
+        assert_eq!(classify("", "", 22).app_name, "SSH");
+        assert_eq!(classify("", "", 3306).app_name, "MySQL");
+        assert_eq!(classify("", "", 8080).app_name, "HTTP-Alt");
+        assert_eq!(classify("", "", 9999).app_name, "Unknown");
+    }
+
+    #[test]
+    fn test_sni_takes_priority_over_port() {
+        // SNI should match before port fallback
+        assert_eq!(classify("www.youtube.com", "", 443).app_name, "YouTube");
+        assert_eq!(classify("", "weixin.qq.com", 443).app_name, "微信");
     }
 
     #[test]

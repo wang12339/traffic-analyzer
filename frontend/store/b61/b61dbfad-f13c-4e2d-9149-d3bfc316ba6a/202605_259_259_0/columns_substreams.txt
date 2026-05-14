@@ -1,0 +1,85 @@
+columns substreams version: 1
+28 columns:
+1 substreams for column `timestamp`:
+	timestamp
+1 substreams for column `first_seen`:
+	first_seen
+1 substreams for column `last_seen`:
+	last_seen
+2 substreams for column `src_ip`:
+	src_ip.size
+	src_ip
+2 substreams for column `dst_ip`:
+	dst_ip.size
+	dst_ip
+1 substreams for column `src_port`:
+	src_port
+1 substreams for column `dst_port`:
+	dst_port
+2 substreams for column `protocol`:
+	protocol.size
+	protocol
+3 substreams for column `sni`:
+	sni.sparse.idx
+	sni.size
+	sni
+3 substreams for column `ja3`:
+	ja3.sparse.idx
+	ja3.size
+	ja3
+3 substreams for column `dns_domain`:
+	dns_domain.sparse.idx
+	dns_domain.size
+	dns_domain
+3 substreams for column `http_host`:
+	http_host.sparse.idx
+	http_host.size
+	http_host
+3 substreams for column `http_method`:
+	http_method.sparse.idx
+	http_method.size
+	http_method
+3 substreams for column `http_ua`:
+	http_ua.sparse.idx
+	http_ua.size
+	http_ua
+1 substreams for column `packets_up`:
+	packets_up
+2 substreams for column `packets_down`:
+	packets_down.sparse.idx
+	packets_down
+1 substreams for column `bytes_up`:
+	bytes_up
+2 substreams for column `bytes_down`:
+	bytes_down.sparse.idx
+	bytes_down
+1 substreams for column `duration_ms`:
+	duration_ms
+2 substreams for column `pkt_size_hist`:
+	pkt_size_hist.size
+	pkt_size_hist
+1 substreams for column `pkt_iat_mean_us`:
+	pkt_iat_mean_us
+2 substreams for column `app_id`:
+	app_id.sparse.idx
+	app_id
+2 substreams for column `app_name`:
+	app_name.size
+	app_name
+2 substreams for column `app_category`:
+	app_category.size
+	app_category
+2 substreams for column `confidence`:
+	confidence.sparse.idx
+	confidence
+2 substreams for column `src_mac`:
+	src_mac.size
+	src_mac
+3 substreams for column `device_manufacturer`:
+	device_manufacturer.sparse.idx
+	device_manufacturer.size
+	device_manufacturer
+3 substreams for column `device_hostname`:
+	device_hostname.sparse.idx
+	device_hostname.size
+	device_hostname
