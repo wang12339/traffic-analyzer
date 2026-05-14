@@ -1,4 +1,5 @@
 //! ClickHouse storage layer: schema management, batch inserts.
+#![allow(dead_code)]
 
 use anyhow::{Context, Result};
 use clickhouse::{Client, Row};
@@ -214,9 +215,8 @@ fn urlencoding(s: &str) -> String {
         // Build a clean JSON object with only the columns we need
         let mut row = serde_json::Map::new();
         let ts = rec["timestamp"].as_f64().unwrap_or(0.0);
-        if let Some(ndt_utc) = chrono::NaiveDateTime::from_timestamp_opt(ts as i64, ((ts.fract() * 1_000_000_000.0) as u32)) {
+        if let Some(utc) = chrono::DateTime::from_timestamp(ts as i64, (ts.fract() * 1_000_000_000.0) as u32) {
             // Convert UTC to local time (Asia/Shanghai)
-            let utc = chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(ndt_utc, chrono::Utc);
             let local = utc.with_timezone(&chrono::Local);
             row.insert("timestamp".into(), local.format("%Y-%m-%d %H:%M:%S.%6f").to_string().into());
         }
@@ -300,7 +300,7 @@ fn urlencoding(s: &str) -> String {
     pub async fn write_http_session(&self, rec: &serde_json::Value) -> Result<(), anyhow::Error> {
         let rtype = rec["type"].as_str().unwrap_or("");
         let ts = rec["timestamp"].as_f64().unwrap_or(0.0);
-        let ts_str = chrono::NaiveDateTime::from_timestamp_opt(ts as i64, ((ts.fract() * 1_000_000_000.0) as u32))
+        let ts_str = chrono::DateTime::from_timestamp(ts as i64, (ts.fract() * 1_000_000_000.0) as u32)
             .map(|dt| dt.format("%Y-%m-%d %H:%M:%S.%3f").to_string())
             .unwrap_or_default();
 

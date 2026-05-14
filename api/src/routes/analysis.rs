@@ -147,7 +147,7 @@ pub async fn get_insights(state: web::Data<Arc<AppState>>) -> HttpResponse {
     }
     let mut device_profiles = Vec::new();
     let mut alerts = Vec::new();
-    for (ip, (mac, apps, domains, bytes, flows, dest_set)) in &device_map {
+    for (ip, (mac, apps, _domains, bytes, flows, dest_set)) in &device_map {
         let dests: Vec<String> = dest_set.iter().cloned().collect();
         let uniq_apps: Vec<String> = {
             let mut s: Vec<String> = apps.clone(); s.sort(); s.dedup();

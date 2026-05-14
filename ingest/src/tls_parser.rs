@@ -1,35 +1,18 @@
 //! TLS 1.2/1.3 ClientHello parser — extracts SNI, JA3, TLS version.
 //! Handles records that may span multiple TCP segments (via buffered input).
 
+// Many const/struct fields are used for documentation/exhaustiveness
+#![allow(dead_code)]
+
 use sha2::{Digest, Sha256};
 
 const TLS_CONTENT_HANDSHAKE: u8 = 0x16;
 const TLS_HANDSHAKE_CLIENT_HELLO: u8 = 0x01;
 const TLS_HANDSHAKE_SERVER_HELLO: u8 = 0x02;
 const TLS_EXT_SNI: u16 = 0x0000;
-const TLS_EXT_ALPN: u16 = 0x0010;
 const TLS_EXT_SUPPORTED_GROUPS: u16 = 0x000a;
 const TLS_EXT_EC_POINT_FORMATS: u16 = 0x000b;
-const TLS_EXT_KEY_SHARE: u16 = 0x0033;
-const TLS_EXT_PSK_MODES: u16 = 0x002d;
-const TLS_EXT_SUPPORTED_VERSIONS: u16 = 0x002b;
-const TLS_EXT_COMPRESS_CERT: u16 = 0x001b;
-const TLS_EXT_APPLICATION_LAYER: u16 = 0x0017;
-const TLS_EXT_STATUS_REQUEST: u16 = 0x0005;
-const TLS_EXT_SIGNATURE_ALGORITHMS: u16 = 0x000d;
-const TLS_EXT_SCT: u16 = 0x0012;
-const TLS_EXT_EXTENDED_MASTER_SECRET: u16 = 0x0017;
-const TLS_EXT_SESSION_TICKET: u16 = 0x0023;
-const TLS_EXT_QUIC_TRANSPORT: u16 = 0x0039;
-const TLS_EXT_ENCRYPT_THEN_MAC: u16 = 0x0016;
 const TLS_EXT_PADDING: u16 = 0x0015;
-const TLS_EXT_RENEGOTIATION_INFO: u16 = 0xff01;
-const TLS_EXT_POST_HANDSHAKE_AUTH: u16 = 0x0032;
-const TLS_EXT_RECORD_SIZE_LIMIT: u16 = 0x001c;
-const TLS_EXT_EARLY_DATA: u16 = 0x002a;
-const TLS_EXT_COOKIE: u16 = 0x002c;
-const TLS_EXT_CERT_AUTHORITIES: u16 = 0x002f;
-const TLS_EXT_OID_FILTERS: u16 = 0x003a;
 
 /// Parsed TLS ClientHello metadata.
 #[derive(Debug, Clone, Default)]

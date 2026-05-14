@@ -131,7 +131,7 @@ static RULES: &[Rule] = &[
 struct Rule(u32, &'static str, &'static str, &'static [&'static str]);
 
 /// Classify based on SNI, DNS, and port.
-pub fn classify(sni: &str, dns: &str, port: u16) -> Classification {
+pub fn classify(sni: &str, dns: &str, _port: u16) -> Classification {
     let combined = format!("{} {}", sni.to_lowercase(), dns.to_lowercase());
 
     for rule in RULES {

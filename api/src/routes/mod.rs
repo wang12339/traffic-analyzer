@@ -3,7 +3,6 @@ pub mod analysis;
 pub mod queries;
 
 use std::sync::Arc;
-use std::collections::HashMap;
 use actix_web::HttpResponse;
 use clap::Parser;
 use reqwest::Client as HttpClient;
@@ -24,6 +23,7 @@ pub struct AppState {
     pub http: HttpClient,
     pub ch_url: String,
     pub database: String,
+    #[allow(dead_code)]
     pub api_key: String,
 }
 
@@ -55,6 +55,7 @@ impl<T: Serialize> ApiResponse<T> { pub fn ok(data: T) -> Self { Self { success:
 
 pub fn api_err(msg: &str) -> ApiResponse<serde_json::Value> { ApiResponse { success: false, data: serde_json::Value::Null, error: Some(msg.to_string()) }}
 
+#[allow(dead_code)]
 pub fn check_auth(req: &actix_web::HttpRequest, state: &AppState) -> Result<(), HttpResponse> {
     if std::env::var("API_KEY").is_err() {
         return Ok(());
@@ -83,7 +84,7 @@ pub fn check_auth(req: &actix_web::HttpRequest, state: &AppState) -> Result<(), 
 #[derive(Deserialize)] pub struct TimeQuery { pub since: Option<String> }
 
 /// Determine device model (e.g. "iPhone 14 Pro Max") from DNS/SNI/UA patterns.
-pub fn identify_device_model(apps: &[String], domains: &[String], mac: &str, ua: &str) -> String {
+pub fn identify_device_model(_apps: &[String], domains: &[String], mac: &str, ua: &str) -> String {
     let combined = domains.join(" ");
     let ua_lower = ua.to_lowercase();
     if combined.contains("miui.com") || combined.contains("micloud.xiaomi") {
@@ -139,7 +140,6 @@ pub fn identify_device_model(apps: &[String], domains: &[String], mac: &str, ua:
 
 /// Infer device type and OS from DNS/app patterns.
 pub fn profile_device(apps: &[String], domains: &[String], mac: &str) -> (String, String, f32) {
-    let combined: String = domains.iter().map(|d| d.as_str()).collect::<Vec<_>>().join(" ");
     let apps_combined: String = apps.iter().map(|a| a.as_str()).collect::<Vec<_>>().join(" ");
     let mac_lower = mac.to_lowercase();
     let mac_prefix = if mac.len() >= 8 { &mac_lower[..8] } else { "" };

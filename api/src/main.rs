@@ -2,6 +2,7 @@ mod routes;
 
 use std::sync::Arc;
 use actix_cors::Cors;
+use actix_governor::{Governor, GovernorConfigBuilder};
 use actix_web::{web, App, HttpServer, middleware};
 use clap::Parser;
 use reqwest::Client as HttpClient;
@@ -18,10 +19,18 @@ async fn main() -> anyhow::Result<()> {
     let http = HttpClient::builder().timeout(std::time::Duration::from_secs(10)).build()?;
     let state = Arc::new(AppState { http, ch_url: args.clickhouse, database: args.db_name, api_key: std::env::var("API_KEY").unwrap_or_default() });
     match ch_one::<serde_json::Value>(&state, "SELECT 1 as v").await { Ok(_) => info!("CH OK"), Err(e) => warn!("CH: {}", e) }
+    // Rate limiting: 30 requests/second per IP, burst up to 60
+    let rate_limiter = GovernorConfigBuilder::default()
+        .requests_per_second(30)
+        .burst_size(60)
+        .finish()
+        .expect("rate limiter config");
+
     HttpServer::new(move || {
         let cors = Cors::default().allow_any_origin().allow_any_method().allow_any_header().max_age(3600);
         App::new()
             .wrap(cors)
+            .wrap(Governor::new(&rate_limiter))
             .wrap(middleware::Logger::default())
             .app_data(web::Data::new(state.clone()))
             // Health & status

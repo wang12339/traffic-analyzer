@@ -49,3 +49,4 @@ wechat_report.txt
 
 # Frontend dist
 frontend/dist/
+frontend/tsconfig.tsbuildinfo

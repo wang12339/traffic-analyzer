@@ -15,6 +15,7 @@ clap = { workspace = true }
 chrono = { workspace = true }
 actix-web = "4"
 actix-cors = "0.7"
+actix-governor = "0.10"
 reqwest = { version = "0.12", features = ["json"] }
 jsonwebtoken = "9"
 sha2 = "0.10"

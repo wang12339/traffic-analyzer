@@ -1,14 +1,13 @@
 //! Flow aggregation: per-5-tuple state tracking, packet statistics,
 //! TLS/HTTP/DNS metadata correlation, and application classification.
+#![allow(dead_code)]
 
 use std::collections::{HashMap, HashSet};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::sync::Arc;
-use std::time::{SystemTime, UNIX_EPOCH};
 
-use chrono::{DateTime, Utc};
+use chrono::DateTime;
 use traffic_core::{Classification, FlowKey, FlowRecord, PacketFrame, classifier};
-use tokio::sync::Mutex;
 use tracing::{debug, info};
 use crate::dns_parser;
 use crate::http_parser;
@@ -109,7 +108,7 @@ impl FlowState {
     fn to_flow_record(&self, key: &FlowKey, app: &Classification) -> FlowRecord {
         // Keep timestamps in UTC — timezone conversion is a display-layer concern
         let first = DateTime::from_timestamp_nanos(self.first_seen_ns as i64);
-        let last = DateTime::from_timestamp_nanos(self.last_seen_ns as i64);
+        let _last = DateTime::from_timestamp_nanos(self.last_seen_ns as i64);
         let duration_ns = self.last_seen_ns.saturating_sub(self.first_seen_ns);
 
         // Merge up/down histograms

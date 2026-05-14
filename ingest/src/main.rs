@@ -12,8 +12,8 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result};
 use clap::Parser;
-use traffic_core::{FlowKey, FlowRecord, PacketFrame};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use traffic_core::PacketFrame;
+use tokio::io::AsyncReadExt;
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
 use tokio::time::sleep;

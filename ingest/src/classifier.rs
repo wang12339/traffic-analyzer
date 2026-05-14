@@ -1,5 +1,6 @@
 //! Application classifier: multi-dimensional voting engine that combines
 //! SNI, DNS, JA3, HTTP, and flow features to identify applications.
+#![allow(dead_code)]
 
 use traffic_core::{Classification, FlowKey};
 
@@ -188,12 +189,12 @@ impl Classifier {
         key: &FlowKey,
         sni: &str,
         dns_domain: &str,
-        ja3: &str,
+        _ja3: &str,
         http_host: &str,
-        http_ua: &str,
+        _http_ua: &str,
         total_bytes: f64,
         total_packets: u32,
-        has_iat: bool,
+        _has_iat: bool,
     ) -> Classification {
         let mut best_id = 0u32;
         let mut best_score = 0.0f64;
