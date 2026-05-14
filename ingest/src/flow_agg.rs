@@ -297,8 +297,10 @@ impl FlowAggregator {
             }
             // QUIC SNI extraction (UDP/443)
             if (frame.src_port == 443 || frame.dst_port == 443) && !frame.payload.is_empty() {
+                tracing::debug!("QUIC: UDP/443 packet, payload_len={}", frame.payload.len());
                 let quic = crate::quic_parser::parse_quic_initial(&frame.payload);
                 if let Some(q) = quic {
+                    tracing::debug!("QUIC parsed: sni={}", q.sni);
                     if !q.sni.is_empty() {
                         state.sni = Some(q.sni.clone());
                     }

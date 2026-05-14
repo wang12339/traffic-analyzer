@@ -9,11 +9,12 @@
 //!   RFC 9001 — Using TLS to Secure QUIC
 //!   RFC 8446 — The Transport Layer Security (TLS) Protocol Version 1.3
 
-use aes::cipher::{generic_array::GenericArray, BlockEncrypt, KeyInit};
+use aes::cipher::{BlockEncrypt, KeyInit, generic_array::GenericArray};
 use ring::{aead, hkdf};
 
 /// QUIC v1 initial salt (RFC 9001 §5.2)
-const QUIC_V1_INITIAL_SALT: [u8; 20] = *b"\x38\x76\x2c\xf7\xf5\x59\x34\xb3\x4d\x17\x9a\xe6\xa4\xc8\x0c\xad\xcc\xbb\x7f\x0a";
+const QUIC_V1_INITIAL_SALT: [u8; 20] =
+    *b"\x38\x76\x2c\xf7\xf5\x59\x34\xb3\x4d\x17\x9a\xe6\xa4\xc8\x0c\xad\xcc\xbb\x7f\x0a";
 
 const QUIC_V1: u32 = 0x0000_0001;
 
@@ -31,72 +32,112 @@ pub struct QuicInitial {
 /// Returns `Some(QuicInitial)` on success, `None` if not a valid QUIC Initial.
 pub fn parse_quic_initial(buf: &[u8]) -> Option<QuicInitial> {
     if buf.len() < 7 {
+        tracing::debug!("QUIC: buffer too short: {} bytes", buf.len());
         return None;
     }
 
     // Byte 0: Long header check (top 2 bits must be 1 for long header)
     if buf[0] & 0xC0 != 0xC0 {
+        tracing::debug!("QUIC: not long header: byte=0x{:02x}", buf[0]);
         return None;
     }
 
-    // Form bit must be 1 (long header)
-    if buf[0] & 0x80 == 0 {
-        return None;
-    }
-
-    // Extract packet type from bits 4-5 (0xC0 = 0b11000000)
-    // For Initial: type = 0b00
+    // Extract packet type from bits 4-5
     let packet_type = (buf[0] >> 4) & 0x03;
     if packet_type != 0 {
+        tracing::debug!("QUIC: not Initial packet (type={})", packet_type);
         return None; // Not an Initial packet
     }
 
     // Fixed bit (bit 3) must be 1
     if buf[0] & 0x08 == 0 {
+        tracing::debug!("QUIC: fixed bit not set");
         return None;
     }
 
     let version = u32::from_be_bytes([buf[1], buf[2], buf[3], buf[4]]);
     if version != QUIC_V1 {
+        tracing::debug!("QUIC: unsupported version: 0x{:08x}", version);
         return None; // Only support QUIC v1
     }
 
     let mut pos = 5usize;
+    tracing::debug!(
+        "QUIC Initial header OK, version=0x{:08x}, total_len={}",
+        version,
+        buf.len()
+    );
 
     // Destination Connection ID length
-    if pos >= buf.len() { return None; }
+    if pos >= buf.len() {
+        return None;
+    }
     let dcid_len = buf[pos] as usize;
     pos += 1;
-    if pos + dcid_len > buf.len() { return None; }
+    if pos + dcid_len > buf.len() {
+        tracing::debug!("QUIC: DCID overflow");
+        return None;
+    }
     let dcid = buf[pos..pos + dcid_len].to_vec();
     pos += dcid_len;
 
     // Source Connection ID length
-    if pos >= buf.len() { return None; }
+    if pos >= buf.len() {
+        return None;
+    }
     let scid_len = buf[pos] as usize;
     pos += 1;
-    if pos + scid_len > buf.len() { return None; }
+    if pos + scid_len > buf.len() {
+        tracing::debug!("QUIC: SCID overflow");
+        return None;
+    }
     let scid = buf[pos..pos + scid_len].to_vec();
     pos += scid_len;
 
-    // Token (Initial packets only)
-    if pos + 4 > buf.len() { return None; }
-    let token_len = u32::from_be_bytes([buf[pos], buf[pos + 1], buf[pos + 2], buf[pos + 3]]) as usize;
-    pos += 4;
-    if pos + token_len > buf.len() { return None; }
+    // Token (Initial packets only, preceded by variable-length integer)
+    if pos >= buf.len() {
+        return None;
+    }
+    let (token_len, consumed) = match read_quic_varint(&buf[pos..]) {
+        Some((l, c)) => (l as usize, c),
+        None => {
+            tracing::debug!("QUIC: token length varint parse failed");
+            return None;
+        }
+    };
+    pos += consumed;
+    if pos + token_len > buf.len() {
+        tracing::debug!("QUIC: token overflow");
+        return None;
+    }
     pos += token_len; // Skip token
 
-    // QUIC Long Header Payload Length (4 bytes)
-    if pos + 4 > buf.len() { return None; }
-    let payload_len = u32::from_be_bytes([buf[pos], buf[pos + 1], buf[pos + 2], buf[pos + 3]]) as usize;
-    pos += 4;
+    // QUIC Long Header Payload Length (variable-length integer)
+    if pos >= buf.len() {
+        return None;
+    }
+    let (payload_len, consumed) = match read_quic_varint(&buf[pos..]) {
+        Some((l, c)) => (l as usize, c),
+        None => {
+            tracing::debug!("QUIC: payload length varint parse failed");
+            return None;
+        }
+    };
+    pos += consumed;
 
-    // Ensure we have enough data for the protected payload
-    if pos + 4 > buf.len() {
+    if pos >= buf.len() {
+        tracing::debug!("QUIC: no protected payload at pos={}", pos);
         return None;
     }
 
     let protected = &buf[pos..];
+    tracing::debug!(
+        "QUIC: dcid={:02x?} scid={:02x?} protected_payload={}, payload_len_field={}",
+        &dcid[..dcid.len().min(8)],
+        &scid[..scid.len().min(8)],
+        protected.len(),
+        payload_len
+    );
 
     // Derive initial keys from DCID
     let (key, iv, hp) = derive_initial_keys(&dcid)?;
@@ -111,14 +152,41 @@ pub fn parse_quic_initial(buf: &[u8]) -> Option<QuicInitial> {
     // Decrypt the payload (AEAD)
     let encrypted = &protected[payload_start..];
     if encrypted.len() < 16 {
+        tracing::debug!(
+            "QUIC: encrypted too short for AEAD: {} bytes",
+            encrypted.len()
+        );
         return None; // Need at least tag
     }
+    tracing::debug!(
+        "QUIC: decrypting {} bytes (pn={:02x?})",
+        encrypted.len(),
+        pn
+    );
 
-    let plaintext = decrypt_payload(encrypted, &key, &iv, &pn, &dcid, &scid)?;
+    let plaintext = match decrypt_payload(encrypted, &key, &iv, &pn, &dcid, &scid) {
+        Some(p) => {
+            tracing::debug!("QUIC: decrypted {} bytes", p.len());
+            p
+        }
+        None => {
+            tracing::debug!("QUIC: AEAD decryption FAILED");
+            return None;
+        }
+    };
 
     // Extract CRYPTO frame from the plaintext
-    extract_sni_from_crypto(&plaintext).map(|sni| QuicInitial {
-        sni: sni.to_string(),
+    let sni = extract_sni_from_crypto(&plaintext);
+    if sni.is_some() {
+        tracing::debug!("QUIC: extracted SNI: {}", sni.as_ref().unwrap());
+    } else {
+        tracing::debug!(
+            "QUIC: no SNI found in CRYPTO frame, plaintext_len={}",
+            plaintext.len()
+        );
+    }
+    sni.map(|s| QuicInitial {
+        sni: s.to_string(),
         ja3: String::new(),
         version,
         scid,
@@ -126,43 +194,72 @@ pub fn parse_quic_initial(buf: &[u8]) -> Option<QuicInitial> {
     })
 }
 
-/// Derive QUIC v1 initial keys from the Destination Connection ID.
+/// Build TLS 1.3 HkdfLabel bytes for HKDF-Expand-Label (RFC 8446 §7.1).
+fn hkdf_expand_label(
+    prk: &hkdf::Prk,
+    label: &[u8],
+    context: &[u8],
+    out_len: u16,
+) -> Option<Vec<u8>> {
+    // HkdfLabel:
+    //   uint16 length
+    //   opaque label<7..255> = "tls13 " + label
+    //   opaque context<0..255>
+    let label_prefix = b"tls13 ";
+    let mut hkdf_label =
+        Vec::with_capacity(2 + 1 + label_prefix.len() + label.len() + 1 + context.len());
+    hkdf_label.extend_from_slice(&out_len.to_be_bytes()); // length
+    hkdf_label.push((label_prefix.len() + label.len()) as u8); // label length
+    hkdf_label.extend_from_slice(label_prefix); // "tls13 "
+    hkdf_label.extend_from_slice(label); // label
+    hkdf_label.push(context.len() as u8); // context length
+    hkdf_label.extend_from_slice(context); // context
+
+    let mut out = vec![0u8; out_len as usize];
+    prk.expand(&[&hkdf_label[..]], hkdf::HKDF_SHA256)
+        .and_then(|okm| okm.fill(&mut out))
+        .ok()?;
+    Some(out)
+}
+
+/// Derive QUIC v1 initial keys from the Destination Connection ID (RFC 9001 §5.2).
 /// Returns (key_128, iv_96, header_protection_key).
 fn derive_initial_keys(dcid: &[u8]) -> Option<([u8; 16], [u8; 12], [u8; 16])> {
-    // QUIC v1 initial salt is fixed
+    tracing::debug!(
+        "QUIC: deriving keys from dcid={:02x?} (len={})",
+        &dcid[..dcid.len().min(8)],
+        dcid.len()
+    );
+
+    // Step 1: initial_secret = HKDF-Extract(initial_salt, dcid)
     let salt = hkdf::Salt::new(hkdf::HKDF_SHA256, &QUIC_V1_INITIAL_SALT);
-    let prk = salt.extract(dcid);
+    let initial_secret = salt.extract(dcid);
 
-    // Derive initial key: "quic key"
+    // Step 2: client_initial_secret = HKDF-Expand-Label(initial_secret, "client in", "", 32)
+    let client_secret = hkdf_expand_label(&initial_secret, b"client in", b"", 32)?;
+    let client_prk = hkdf::Prk::new_less_safe(hkdf::HKDF_SHA256, &client_secret);
+
+    // Step 3: key = HKDF-Expand-Label(client_initial_secret, "quic key", "", 16)
+    let key_raw = hkdf_expand_label(&client_prk, b"quic key", b"", 16)?;
     let mut key = [0u8; 16];
-    let info_key: &[&[u8]] = &[b"tls13 quic key\0"];
-    if prk.expand(info_key, hkdf::HKDF_SHA256)
-        .map(|okm| okm.fill(&mut key))
-        .is_err()
-    {
-        return None;
-    }
+    key.copy_from_slice(&key_raw);
 
-    // Derive initial IV: "quic iv"
+    // iv = HKDF-Expand-Label(client_initial_secret, "quic iv", "", 12)
+    let iv_raw = hkdf_expand_label(&client_prk, b"quic iv", b"", 12)?;
     let mut iv = [0u8; 12];
-    let info_iv: &[&[u8]] = &[b"tls13 quic iv\0"];
-    if prk.expand(info_iv, hkdf::HKDF_SHA256)
-        .map(|okm| okm.fill(&mut iv))
-        .is_err()
-    {
-        return None;
-    }
+    iv.copy_from_slice(&iv_raw);
 
-    // Derive header protection key: "quic hp"
+    // hp = HKDF-Expand-Label(client_initial_secret, "quic hp", "", 16)
+    let hp_raw = hkdf_expand_label(&client_prk, b"quic hp", b"", 16)?;
     let mut hp = [0u8; 16];
-    let info_hp: &[&[u8]] = &[b"tls13 quic hp\0"];
-    if prk.expand(info_hp, hkdf::HKDF_SHA256)
-        .map(|okm| okm.fill(&mut hp))
-        .is_err()
-    {
-        return None;
-    }
+    hp.copy_from_slice(&hp_raw);
 
+    tracing::debug!(
+        "QUIC: keys derived ok, key={:02x?} iv={:02x?} hp={:02x?}",
+        &key[..],
+        &iv[..],
+        &hp[..]
+    );
     Some((key, iv, hp))
 }
 
@@ -186,18 +283,17 @@ fn remove_header_protection(protected: &[u8], hp_key: &[u8; 16]) -> Option<(Vec<
     cipher.encrypt_block(&mut block);
     let mask = block.as_slice();
 
-    // Determine packet number length from the first byte
-    // The first byte has the protected packet number in the lower 2 bits
-    // PN length = (first_byte & 0x03) + 1
-    let pn_len = ((protected[0] & 0x03) + 1) as usize;
+    // Header protection mask for long headers:
+    // mask[0] & 0x0F XORs protected byte 0 lower 4 bits (reserved + PN length)
+    // mask[1..1+pn_len] XORs the packet number bytes
+    // Recover the first byte to get PN length from bits 1-0
+    let first_byte = protected[0] ^ (mask[0] & 0x0F);
+    let pn_len = ((first_byte & 0x03) + 1) as usize;
     if protected.len() < 1 + pn_len {
         return None;
     }
 
-    // The header protection mask is derived from the encrypted sample
-    // For long headers: mask covers bytes after the initial byte
-    // The packet number bytes are protected by mask[1..1+pn_len]
-    // Decrypt packet number bytes
+    // Decrypt packet number bytes using mask bytes 1..1+pn_len
     let mut pn_bytes = Vec::with_capacity(pn_len);
     for i in 0..pn_len {
         if 1 + i < protected.len() {
@@ -234,7 +330,12 @@ fn decrypt_payload(
     nonce.copy_from_slice(iv);
     // XOR the last 4 bytes of IV with the packet number
     let pn_val = if pn.len() >= 4 {
-        u32::from_be_bytes([pn[pn.len() - 4], pn[pn.len() - 3], pn[pn.len() - 2], pn[pn.len() - 1]])
+        u32::from_be_bytes([
+            pn[pn.len() - 4],
+            pn[pn.len() - 3],
+            pn[pn.len() - 2],
+            pn[pn.len() - 1],
+        ])
     } else {
         // Pad with leading zeros
         let mut buf = [0u8; 4];
@@ -284,41 +385,69 @@ fn decrypt_payload(
     }
 }
 
-/// Extract SNI from a QUIC CRYPTO frame payload (which contains TLS ClientHello).
+/// Extract SNI from a QUIC packet's frames (skip non-CRYPTO frames).
 fn extract_sni_from_crypto(plaintext: &[u8]) -> Option<String> {
-    // CRYPTO Frame (RFC 9000 §19.6):
-    // Frame Type (0x06) + Offset (variable) + Length (variable) + Crypto Data
-    // The crypto data contains TLS ClientHello (same format as TCP)
+    let mut pos = 0usize;
+    while pos < plaintext.len() {
+        let frame_type = plaintext[pos];
+        // Frame types: 0x00=PADDING, 0x01=PING, 0x02=ACK, 0x06=CRYPTO, 0x1c=CONNECTION_CLOSE, etc.
+        if frame_type == 0x00 {
+            // PADDING: skip all consecutive 0x00 bytes
+            while pos < plaintext.len() && plaintext[pos] == 0x00 {
+                pos += 1;
+            }
+            continue;
+        }
+        if frame_type == 0x01 || frame_type == 0x02 || frame_type == 0x03 {
+            // PING (1 byte) or ACK (varies) — skip
+            pos += 1;
+            if frame_type == 0x02 {
+                // ACK: skip varint Largest Acknowledged + varint ACK Delay + varint ACK Range Count + varint First ACK Range
+                for _ in 0..5 {
+                    let (_, c) = read_quic_varint(&plaintext[pos..])?;
+                    pos += c;
+                }
+                // ACK Range Count ranges: each is a varint Gap + varint Range
+                let (range_count, _) = read_quic_varint(&plaintext[pos..])?;
+                pos += 1; // we already consumed the count byte
+                for _ in 0..range_count as usize {
+                    let (_, c) = read_quic_varint(&plaintext[pos..])?;
+                    pos += c;
+                    let (_, c) = read_quic_varint(&plaintext[pos..])?;
+                    pos += c;
+                }
+            }
+            continue;
+        }
 
-    if plaintext.is_empty() || plaintext[0] != 0x06 {
-        return None;
+        // CRYPTO Frame (RFC 9000 §19.6): type 0x06
+        if frame_type == 0x06 {
+            let mut inner_pos = pos + 1;
+            let (offset, consumed) = read_quic_varint(&plaintext[inner_pos..])?;
+            inner_pos += consumed;
+            let (data_len, consumed) = read_quic_varint(&plaintext[inner_pos..])?;
+            inner_pos += consumed;
+
+            if offset == 0 && data_len > 0 && inner_pos + data_len as usize <= plaintext.len() {
+                let crypto_data = &plaintext[inner_pos..inner_pos + data_len as usize];
+                // Parse TLS ClientHello
+                if let Some(ch) = crate::tls_parser::parse_client_hello(crypto_data) {
+                    if !ch.sni.is_empty() {
+                        return Some(ch.sni);
+                    }
+                }
+            }
+            // Even if this CRYPTO frame didn't yield SNI, there might be another CRYPTO frame
+            // (QUIC can send multiple CRYPTO frames in one packet for fragmented handshakes)
+            inner_pos += data_len as usize;
+            pos = inner_pos;
+            continue;
+        }
+
+        // Unknown frame type — skip 1 byte and try next
+        pos += 1;
     }
-
-    let mut pos = 1usize;
-
-    // Read variable-length offset
-    let (offset, consumed) = read_quic_varint(&plaintext[pos..])?;
-    pos += consumed;
-
-    // Read variable-length crypto data length
-    let (data_len, consumed) = read_quic_varint(&plaintext[pos..])?;
-    pos += consumed;
-
-    if offset != 0 && data_len == 0 {
-        // Non-first crypto frame (handshake continuation)
-        return None;
-    }
-
-    if pos + data_len as usize > plaintext.len() {
-        return None;
-    }
-
-    let crypto_data = &plaintext[pos..pos + data_len as usize];
-
-    // Parse TLS ClientHello from the crypto data
-    // (same format as TCP TLS)
-    let ch = crate::tls_parser::parse_client_hello(crypto_data)?;
-    if ch.sni.is_empty() { None } else { Some(ch.sni) }
+    None
 }
 
 /// Read a QUIC variable-length integer (RFC 9000 §16).

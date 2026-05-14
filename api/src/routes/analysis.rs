@@ -201,7 +201,11 @@ pub async fn get_device_anomalies(
     ),
     tag = "Devices"
 )]
-pub async fn get_device_trends(state: web::Data<Arc<AppState>>, path: web::Path<String>, q: web::Query<TimeQuery>) -> HttpResponse {
+pub async fn get_device_trends(
+    state: web::Data<Arc<AppState>>,
+    path: web::Path<String>,
+    q: web::Query<TimeQuery>,
+) -> HttpResponse {
     let ip = path.into_inner();
     let se = since_expr(q.since.as_deref().unwrap_or("24h"));
     let sql = format!(
@@ -211,7 +215,9 @@ pub async fn get_device_trends(state: web::Data<Arc<AppState>>, path: web::Path<
          sum(if(protocol='TCP',bytes_up+bytes_down,0)) as tcp_bytes,\
          sum(if(protocol='UDP',bytes_up+bytes_down,0)) as udp_bytes \
          FROM {}.flows WHERE src_ip='{}' AND timestamp>={} GROUP BY bucket ORDER BY bucket",
-        state.database, ip.replace('\'', "\\'"), se
+        state.database,
+        ip.replace('\'', "\\'"),
+        se
     );
     match ch_query::<serde_json::Value>(&state, &sql).await {
         Ok(rows) => HttpResponse::Ok().json(ApiResponse::ok(rows)),

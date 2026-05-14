@@ -51,7 +51,13 @@ fn now_ns() -> u64 {
 #[tokio::main]
 async fn main() -> Result<()> {
     tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::from_default_env().add_directive(tracing::Level::INFO.into()))
+        .with_env_filter(EnvFilter::from_default_env().add_directive(
+            if std::env::var("RUST_LOG").is_ok() {
+                tracing::Level::TRACE.into()
+            } else {
+                tracing::Level::INFO.into()
+            },
+        ))
         .with_target(false)
         .init();
 
