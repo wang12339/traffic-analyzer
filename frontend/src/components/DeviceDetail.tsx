@@ -88,7 +88,7 @@ export function DeviceDetail({ ip, onBack }: { ip: string; onBack: () => void })
                 formatter={(v:any, n:string) => {
                   const labels: Record<string,string> = {tcpKB:'TCP', udpKB:'UDP', totalKB:'合计'};
                   return [`${v} KB`, labels[n] || n];
-                }} />
+                } as any} />
               <Area type="monotone" dataKey="tcpKB" stackId="1" stroke="#6366f1" fill="url(#tcpGrad)" strokeWidth={2} />
               <Area type="monotone" dataKey="udpKB" stackId="1" stroke="#f59e0b" fill="url(#udpGrad)" strokeWidth={2} />
             </AreaChart>
