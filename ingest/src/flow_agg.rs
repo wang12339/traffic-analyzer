@@ -289,11 +289,19 @@ impl FlowAggregator {
             }
         } else if frame.protocol == 17 {
             // UDP
-            // DNS parsing
             if (frame.dst_port == 53 || frame.src_port == 53) && !frame.payload.is_empty() {
                 let dns = dns_parser::parse_dns_query(&frame.payload);
                 if let Some(domain) = dns {
                     state.dns_domain = Some(domain);
+                }
+            }
+            // QUIC SNI extraction (UDP/443)
+            if (frame.src_port == 443 || frame.dst_port == 443) && !frame.payload.is_empty() {
+                let quic = crate::quic_parser::parse_quic_initial(&frame.payload);
+                if let Some(q) = quic {
+                    if !q.sni.is_empty() {
+                        state.sni = Some(q.sni.clone());
+                    }
                 }
             }
         }
