@@ -1,6 +1,15 @@
 use actix_web::{web, HttpResponse};
 use crate::routes::*;
 
+#[utoipa::path(
+    get,
+    path = "/api/stats",
+    params(TimeQuery),
+    responses(
+        (status = 200, description = "Aggregated traffic statistics", body = StatsResponse),
+    ),
+    tag = "Stats"
+)]
 pub async fn get_stats(state: web::Data<Arc<AppState>>, q: web::Query<TimeQuery>) -> HttpResponse {
     let se = since_expr(q.since.as_deref().unwrap_or("24h"));
     let sql = format!("SELECT count() as total_flows,sum(bytes_up+bytes_down) as total_bytes,\
@@ -15,6 +24,15 @@ pub async fn get_stats(state: web::Data<Arc<AppState>>, q: web::Query<TimeQuery>
     }
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/flows",
+    params(FlowQuery),
+    responses(
+        (status = 200, description = "List of flows", body = Vec<FlowRow>),
+    ),
+    tag = "Flows"
+)]
 pub async fn get_flows(state: web::Data<Arc<AppState>>, q: web::Query<FlowQuery>) -> HttpResponse {
     let limit = q.limit.unwrap_or(100).min(1000);
     let se = since_expr(q.since.as_deref().unwrap_or("1h"));
@@ -32,6 +50,15 @@ pub async fn get_flows(state: web::Data<Arc<AppState>>, q: web::Query<FlowQuery>
     }
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/apps",
+    params(TimeQuery),
+    responses(
+        (status = 200, description = "Application traffic breakdown", body = Vec<AppRow>),
+    ),
+    tag = "Apps"
+)]
 pub async fn get_apps(state: web::Data<Arc<AppState>>, q: web::Query<TimeQuery>) -> HttpResponse {
     let se = since_expr(q.since.as_deref().unwrap_or("24h"));
     let sql = format!("SELECT app_id,app_name,app_category,count() as flow_count,\
@@ -44,6 +71,15 @@ pub async fn get_apps(state: web::Data<Arc<AppState>>, q: web::Query<TimeQuery>)
     }
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/devices",
+    params(TimeQuery),
+    responses(
+        (status = 200, description = "Device traffic summary", body = Vec<DeviceRow>),
+    ),
+    tag = "Devices"
+)]
 pub async fn get_devices(state: web::Data<Arc<AppState>>, q: web::Query<TimeQuery>) -> HttpResponse {
     let se = since_expr(q.since.as_deref().unwrap_or("24h"));
     let sql = format!("SELECT src_ip,count() as flows,sum(bytes_up+bytes_down) as bytes_total,\
@@ -57,6 +93,15 @@ pub async fn get_devices(state: web::Data<Arc<AppState>>, q: web::Query<TimeQuer
     }
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/dns",
+    params(TimeQuery),
+    responses(
+        (status = 200, description = "DNS query statistics", body = Vec<DnsRow>),
+    ),
+    tag = "DNS"
+)]
 pub async fn get_dns(state: web::Data<Arc<AppState>>, q: web::Query<TimeQuery>) -> HttpResponse {
     let se = since_expr(q.since.as_deref().unwrap_or("24h"));
     let sql = format!("SELECT dns_domain,count() as count,countDistinct(src_ip) as clients \
@@ -68,6 +113,15 @@ pub async fn get_dns(state: web::Data<Arc<AppState>>, q: web::Query<TimeQuery>) 
     }
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/sni",
+    params(TimeQuery),
+    responses(
+        (status = 200, description = "SNI statistics", body = Vec<SniRow>),
+    ),
+    tag = "SNI"
+)]
 pub async fn get_sni(state: web::Data<Arc<AppState>>, q: web::Query<TimeQuery>) -> HttpResponse {
     let se = since_expr(q.since.as_deref().unwrap_or("24h"));
     let sql = format!("SELECT sni,count() as count,countDistinct(src_ip) as clients \
@@ -79,6 +133,15 @@ pub async fn get_sni(state: web::Data<Arc<AppState>>, q: web::Query<TimeQuery>) 
     }
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/trends",
+    params(TimeQuery),
+    responses(
+        (status = 200, description = "Traffic trend time series", body = Vec<TrendRow>),
+    ),
+    tag = "Trends"
+)]
 pub async fn get_trends(state: web::Data<Arc<AppState>>, q: web::Query<TimeQuery>) -> HttpResponse {
     let se = since_expr(q.since.as_deref().unwrap_or("24h"));
     let sql = format!("SELECT toStartOfMinute(timestamp) as bucket,count() as flows,\
@@ -90,6 +153,16 @@ pub async fn get_trends(state: web::Data<Arc<AppState>>, q: web::Query<TimeQuery
     }
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/export/csv",
+    params(FlowQuery),
+    responses(
+        (status = 200, description = "CSV file with flow data", content_type = "text/csv", body = String),
+        (status = 500, description = "Query failed")
+    ),
+    tag = "Export"
+)]
 pub async fn export_csv(state: web::Data<Arc<AppState>>, query: web::Query<FlowQuery>) -> HttpResponse {
     let since = query.since.as_deref().unwrap_or("1h");
     let se = since_expr(since);
@@ -118,6 +191,14 @@ pub async fn export_csv(state: web::Data<Arc<AppState>>, query: web::Query<FlowQ
     }
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/summary",
+    responses(
+        (status = 200, description = "24-hour traffic summary"),
+    ),
+    tag = "Summary"
+)]
 pub async fn get_summary(state: web::Data<Arc<AppState>>) -> HttpResponse {
     let sql_t = format!("SELECT count() as total,sum(bytes_up+bytes_down) as bytes,count(DISTINCT src_ip) as devices,        count(DISTINCT app_name) as apps FROM {}.flows WHERE timestamp>=now()-toIntervalDay(1)", state.database);
     let sql_w = format!("SELECT app_name,count() as c,round(sum(bytes_up+bytes_down)/1024/1024,1) as mb         FROM {}.flows WHERE timestamp>=now()-toIntervalDay(1) AND app_name!='' AND app_name!='Unknown'         GROUP BY app_name ORDER BY mb DESC LIMIT 5", state.database);

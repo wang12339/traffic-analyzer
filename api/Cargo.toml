@@ -16,6 +16,8 @@ chrono = { workspace = true }
 actix-web = "4"
 actix-cors = "0.7"
 actix-governor = "0.10"
+utoipa = "5"
+utoipa-swagger-ui = { version = "9", features = ["actix-web"] }
 reqwest = { version = "0.12", features = ["json"] }
 jsonwebtoken = "10"
 sha2 = "0.10"

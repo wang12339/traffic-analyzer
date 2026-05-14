@@ -18,6 +18,14 @@ fn router_ssh(cmd: &str) -> String {
     }
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/agent/status",
+    responses(
+        (status = 200, description = "Agent process status"),
+    ),
+    tag = "Agent"
+)]
 pub async fn agent_status() -> HttpResponse {
     let status = router_ssh("ps | grep agent | grep -v grep || echo 'stopped'");
     let log = router_ssh("tail -5 /tmp/agent.log 2>/dev/null || echo 'no log'");
@@ -30,21 +38,56 @@ pub async fn agent_status() -> HttpResponse {
     })))
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/agent/start",
+    responses(
+        (status = 200, description = "Agent started"),
+    ),
+    tag = "Agent"
+)]
 pub async fn agent_start() -> HttpResponse {
     let r = router_ssh("killall agent 2>/dev/null; sleep 1; nohup /root/agent -n br-lan -s 192.168.66.186:9100 > /tmp/agent.log 2>&1 &");
     HttpResponse::Ok().json(ApiResponse::ok(serde_json::json!({"result": "started", "detail": r})))
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/agent/stop",
+    responses(
+        (status = 200, description = "Agent stopped"),
+    ),
+    tag = "Agent"
+)]
 pub async fn agent_stop() -> HttpResponse {
     let r = router_ssh("killall agent 2>/dev/null");
     HttpResponse::Ok().json(ApiResponse::ok(serde_json::json!({"result": "stopped", "detail": r})))
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/agent/restart",
+    responses(
+        (status = 200, description = "Agent restarted"),
+    ),
+    tag = "Agent"
+)]
 pub async fn agent_restart() -> HttpResponse {
     let r = router_ssh("killall agent 2>/dev/null; sleep 2; nohup /root/agent -n br-lan -s 192.168.66.186:9100 > /tmp/agent.log 2>&1 &");
     HttpResponse::Ok().json(ApiResponse::ok(serde_json::json!({"result": "restarted", "detail": r})))
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/agent/logs/{lines}",
+    params(
+        ("lines" = String, Path, description = "Number of log lines to retrieve"),
+    ),
+    responses(
+        (status = 200, description = "Agent log output"),
+    ),
+    tag = "Agent"
+)]
 pub async fn agent_logs(path: web::Path<String>) -> HttpResponse {
     let lines = path.into_inner();
     let n: usize = lines.parse().unwrap_or(20);

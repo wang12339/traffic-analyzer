@@ -1,10 +1,12 @@
 pub mod agent;
 pub mod analysis;
+pub mod doc;
 pub mod queries;
 
 use std::sync::Arc;
 use actix_web::HttpResponse;
 use clap::Parser;
+use utoipa::ToSchema;
 use reqwest::Client as HttpClient;
 use serde::{Deserialize, Serialize};
 
@@ -72,16 +74,16 @@ pub fn check_auth(req: &actix_web::HttpRequest, state: &AppState) -> Result<(), 
 
 // ─── Response types ───
 #[derive(Deserialize, Serialize)] pub struct StatsRow { pub total_flows: u64, pub total_bytes: f64, pub apps: u64, pub devices: u64, pub snis: u64, pub domains: u64, pub fps: f64 }
-#[derive(Serialize)] pub struct StatsResponse { pub total_flows: u64, pub total_bytes: f64, pub active_apps: u64, pub unique_devices: u64, pub unique_snis: u64, pub unique_domains: u64, pub flows_per_sec: f64 }
-#[derive(Deserialize, Serialize)] pub struct FlowRow { pub timestamp: String, pub src_ip: String, pub dst_ip: String, pub src_port: u16, pub dst_port: u16, pub protocol: String, pub sni: String, pub dns_domain: String, pub app_name: String, pub app_category: String, pub confidence: f64, pub bytes_up: f64, pub bytes_down: f64, pub packets_up: u32, pub packets_down: u32, pub duration_ms: i64, pub src_mac: String }
-#[derive(Deserialize, Serialize)] pub struct AppRow { pub app_id: u32, pub app_name: String, pub app_category: String, pub flow_count: u64, pub total_bytes: f64, pub device_count: u64 }
-#[derive(Deserialize, Serialize)] pub struct DeviceRow { pub src_ip: String, pub flows: u64, pub bytes_total: f64, pub app_count: u64, pub last_seen: String, pub src_mac: String, pub sni_count: u64 }
-#[derive(Deserialize, Serialize)] pub struct DnsRow { pub dns_domain: String, pub count: u64, pub clients: u64 }
-#[derive(Deserialize, Serialize)] pub struct SniRow { pub sni: String, pub count: u64, pub clients: u64 }
-#[derive(Deserialize, Serialize)] pub struct TrendRow { pub bucket: String, pub flows: u64, pub bytes: f64 }
-#[derive(Deserialize, Serialize)] pub struct DeviceDetailRow { pub src_ip: String, pub app_name: String, pub app_category: String, pub flow_count: u64, pub total_bytes: f64, pub sni: String, pub dns_domain: String }
-#[derive(Deserialize)] pub struct FlowQuery { pub search_ip: Option<String>, pub search_domain: Option<String>, pub app_id: Option<u32>, pub limit: Option<u32>, pub since: Option<String> }
-#[derive(Deserialize)] pub struct TimeQuery { pub since: Option<String> }
+#[derive(Serialize, ToSchema)] pub struct StatsResponse { pub total_flows: u64, pub total_bytes: f64, pub active_apps: u64, pub unique_devices: u64, pub unique_snis: u64, pub unique_domains: u64, pub flows_per_sec: f64 }
+#[derive(Deserialize, Serialize, ToSchema)] pub struct FlowRow { pub timestamp: String, pub src_ip: String, pub dst_ip: String, pub src_port: u16, pub dst_port: u16, pub protocol: String, pub sni: String, pub dns_domain: String, pub app_name: String, pub app_category: String, pub confidence: f64, pub bytes_up: f64, pub bytes_down: f64, pub packets_up: u32, pub packets_down: u32, pub duration_ms: i64, pub src_mac: String }
+#[derive(Deserialize, Serialize, ToSchema)] pub struct AppRow { pub app_id: u32, pub app_name: String, pub app_category: String, pub flow_count: u64, pub total_bytes: f64, pub device_count: u64 }
+#[derive(Deserialize, Serialize, ToSchema)] pub struct DeviceRow { pub src_ip: String, pub flows: u64, pub bytes_total: f64, pub app_count: u64, pub last_seen: String, pub src_mac: String, pub sni_count: u64 }
+#[derive(Deserialize, Serialize, ToSchema)] pub struct DnsRow { pub dns_domain: String, pub count: u64, pub clients: u64 }
+#[derive(Deserialize, Serialize, ToSchema)] pub struct SniRow { pub sni: String, pub count: u64, pub clients: u64 }
+#[derive(Deserialize, Serialize, ToSchema)] pub struct TrendRow { pub bucket: String, pub flows: u64, pub bytes: f64 }
+#[derive(Deserialize, Serialize, ToSchema)] pub struct DeviceDetailRow { pub src_ip: String, pub app_name: String, pub app_category: String, pub flow_count: u64, pub total_bytes: f64, pub sni: String, pub dns_domain: String }
+#[derive(Deserialize, Serialize, utoipa::IntoParams, ToSchema)] pub struct FlowQuery { pub search_ip: Option<String>, pub search_domain: Option<String>, pub app_id: Option<u32>, pub limit: Option<u32>, pub since: Option<String> }
+#[derive(Deserialize, Serialize, utoipa::IntoParams, ToSchema)] pub struct TimeQuery { pub since: Option<String> }
 
 /// Determine device model (e.g. "iPhone 14 Pro Max") from DNS/SNI/UA patterns.
 pub fn identify_device_model(_apps: &[String], domains: &[String], mac: &str, ua: &str) -> String {

@@ -1,18 +1,27 @@
 use std::collections::{HashMap, HashSet, BTreeMap};
 use actix_web::{web, HttpResponse};
 use serde::Serialize;
+use utoipa::ToSchema;
 use crate::routes::*;
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct LiveSnapshot { pub timestamp: String, pub devices: Vec<LiveDevice> }
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct LiveDevice {
     pub ip: String, pub mac: String, pub flows: u64, pub bytes_total: f64,
     pub destinations: Vec<DestInfo>, pub apps: Vec<String>, pub new_dests: Vec<String>,
 }
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct DestInfo { pub dest: String, pub app: String }
 
+#[utoipa::path(
+    get,
+    path = "/api/live",
+    responses(
+        (status = 200, description = "Live traffic snapshot", body = LiveSnapshot),
+    ),
+    tag = "Live"
+)]
 pub async fn get_live(state: web::Data<Arc<AppState>>) -> HttpResponse {
     let sql = format!(
         "SELECT src_ip,sni,dns_domain,app_name,sum(bytes_up+bytes_down) as b,any(src_mac) as m \
@@ -68,6 +77,17 @@ pub async fn get_live(state: web::Data<Arc<AppState>>) -> HttpResponse {
     }))
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/device/{ip}/current",
+    params(
+        ("ip" = String, Path, description = "Device IP address"),
+    ),
+    responses(
+        (status = 200, description = "Current active connections"),
+    ),
+    tag = "Devices"
+)]
 pub async fn get_device_current(state: web::Data<Arc<AppState>>, path: web::Path<String>) -> HttpResponse {
     let ip = path.into_inner();
     let sql = format!(
@@ -81,6 +101,17 @@ pub async fn get_device_current(state: web::Data<Arc<AppState>>, path: web::Path
     }
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/device/{ip}/anomalies",
+    params(
+        ("ip" = String, Path, description = "Device IP address"),
+    ),
+    responses(
+        (status = 200, description = "First-seen destinations"),
+    ),
+    tag = "Devices"
+)]
 pub async fn get_device_anomalies(state: web::Data<Arc<AppState>>, path: web::Path<String>) -> HttpResponse {
     let ip = path.into_inner();
     let recent_sql = format!(
@@ -108,6 +139,17 @@ pub async fn get_device_anomalies(state: web::Data<Arc<AppState>>, path: web::Pa
     ))
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/device/{ip}",
+    params(
+        ("ip" = String, Path, description = "Device IP address"),
+    ),
+    responses(
+        (status = 200, description = "Device detail by app", body = Vec<DeviceDetailRow>),
+    ),
+    tag = "Devices"
+)]
 pub async fn get_device_detail(state: web::Data<Arc<AppState>>, path: web::Path<String>) -> HttpResponse {
     let ip = path.into_inner();
     let sql = format!("SELECT src_ip,app_name,app_category,count() as flow_count,\
@@ -121,6 +163,14 @@ pub async fn get_device_detail(state: web::Data<Arc<AppState>>, path: web::Path<
     }
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/insights",
+    responses(
+        (status = 200, description = "AI-driven device insights"),
+    ),
+    tag = "Analysis"
+)]
 pub async fn get_insights(state: web::Data<Arc<AppState>>) -> HttpResponse {
     let sql = format!(
         "SELECT src_ip,app_name,sni,dns_domain,src_mac,sum(bytes_up+bytes_down) as bytes,count() as flows \
@@ -208,6 +258,14 @@ pub async fn get_insights(state: web::Data<Arc<AppState>>) -> HttpResponse {
     })))
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/analysis/wechat",
+    responses(
+        (status = 200, description = "WeChat traffic analysis"),
+    ),
+    tag = "Analysis"
+)]
 pub async fn get_wechat_analysis(state: web::Data<Arc<AppState>>) -> HttpResponse {
     let db = &state.database;
     let day = "now()-toIntervalDay(1)";
@@ -254,6 +312,14 @@ pub async fn get_wechat_analysis(state: web::Data<Arc<AppState>>) -> HttpRespons
     }
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/http",
+    responses(
+        (status = 200, description = "HTTP session list"),
+    ),
+    tag = "Analysis"
+)]
 pub async fn get_http_sessions(state: web::Data<Arc<AppState>>) -> HttpResponse {
     let sql = format!(
         "SELECT timestamp,host,method,path,status_code,content_type,content_length,user_agent          FROM {}.http_sessions ORDER BY timestamp DESC LIMIT 100",
@@ -264,6 +330,14 @@ pub async fn get_http_sessions(state: web::Data<Arc<AppState>>) -> HttpResponse 
     }
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/topology",
+    responses(
+        (status = 200, description = "Network topology data"),
+    ),
+    tag = "Analysis"
+)]
 pub async fn get_topology(state: web::Data<Arc<AppState>>) -> HttpResponse {
     let sql = format!(
         "SELECT src_ip,dst_ip,app_name,count() as w,sum(bytes_up+bytes_down) as b          FROM {}.flows WHERE timestamp>=now()-toIntervalHour(1) AND src_ip LIKE '192.168.%'          AND dst_port IN (80,443,8080)         GROUP BY src_ip,dst_ip,app_name ORDER BY b DESC LIMIT 200",
@@ -277,6 +351,14 @@ pub async fn get_topology(state: web::Data<Arc<AppState>>) -> HttpResponse {
 
 
 /// Timeline: hourly app usage and visited websites.
+#[utoipa::path(
+    get,
+    path = "/api/timeline",
+    responses(
+        (status = 200, description = "Hourly timeline"),
+    ),
+    tag = "Analysis"
+)]
 pub async fn get_timeline(state: web::Data<Arc<AppState>>) -> HttpResponse {
     let sql1 = format!(
         "SELECT toHour(timestamp) as h,app_name,count() as c          FROM {}.flows WHERE timestamp>=now()-toIntervalDay(1)          AND app_name!='' AND app_name!='Unknown'          GROUP BY h,app_name ORDER BY h,c DESC", state.database);
@@ -294,6 +376,14 @@ pub async fn get_timeline(state: web::Data<Arc<AppState>>) -> HttpResponse {
     }
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/alerts",
+    responses(
+        (status = 200, description = "Active alerts"),
+    ),
+    tag = "Analysis"
+)]
 pub async fn get_alerts(state: web::Data<Arc<AppState>>) -> HttpResponse {
     let sql = format!(
         "SELECT src_ip,count(DISTINCT sni)+count(DISTINCT dns_domain) as dests,         countDistinct(app_name) as apps,sum(bytes_up+bytes_down) as bytes          FROM {}.flows WHERE timestamp>=now()-toIntervalHour(1)          AND src_ip LIKE '192.168.%'          GROUP BY src_ip HAVING dests>10 OR bytes>10000000 ORDER BY bytes DESC LIMIT 20",
@@ -304,6 +394,15 @@ pub async fn get_alerts(state: web::Data<Arc<AppState>>) -> HttpResponse {
     }
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/health",
+    responses(
+        (status = 200, description = "Service is healthy"),
+        (status = 503, description = "Service unavailable"),
+    ),
+    tag = "Health"
+)]
 pub async fn health(state: web::Data<Arc<AppState>>) -> HttpResponse {
     let sql = format!("SELECT count() as total_flows,0 as total_bytes,0 as apps,0 as devices,0 as snis,0 as domains,0 as fps FROM {}.flows", state.database);
     match ch_one::<StatsRow>(&state, &sql).await {
@@ -312,6 +411,14 @@ pub async fn health(state: web::Data<Arc<AppState>>) -> HttpResponse {
     }
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/admin/status",
+    responses(
+        (status = 200, description = "Admin status"),
+    ),
+    tag = "Admin"
+)]
 pub async fn get_admin_status(state: web::Data<Arc<AppState>>) -> HttpResponse {
     let sql_f = format!("SELECT count() as c, max(timestamp) as t FROM {}.flows", state.database);
     let sql_h = format!("SELECT count() as c FROM {}.http_sessions", state.database);

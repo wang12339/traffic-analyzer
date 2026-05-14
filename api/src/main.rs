@@ -5,6 +5,8 @@ use actix_cors::Cors;
 use actix_governor::{Governor, GovernorConfigBuilder};
 use actix_web::{web, App, HttpServer, middleware};
 use clap::Parser;
+use utoipa::OpenApi;
+use utoipa_swagger_ui::SwaggerUi;
 use reqwest::Client as HttpClient;
 use tracing::{info, warn};
 use tracing_subscriber::EnvFilter;
@@ -63,6 +65,11 @@ async fn main() -> anyhow::Result<()> {
             .route("/api/agent/stop", web::post().to(agent::agent_stop))
             .route("/api/agent/restart", web::post().to(agent::agent_restart))
             .route("/api/agent/logs/{lines}", web::get().to(agent::agent_logs))
+            // Swagger UI
+            .service(
+                SwaggerUi::new("/api/docs/{_:.*}")
+                    .url("/api/docs/openapi.json", routes::doc::ApiDoc::openapi()),
+            )
     }).bind(&args.listen)?.run().await?;
     Ok(())
 }
