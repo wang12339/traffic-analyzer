@@ -47,6 +47,11 @@ export function DeviceDetail({ ip, onBack }: { ip: string; onBack: () => void })
     }).catch(() => setLoading(false));
   }, [ip]);
 
+  const chartFormatter: any = (v: any, n: string) => {
+    const labels: Record<string, string> = { tcpKB: 'TCP', udpKB: 'UDP', totalKB: '合计' };
+    return [`${v} KB`, labels[n] || n];
+  };
+
   if (loading) return <div style={{padding:60, textAlign:'center', color:'var(--text-secondary)'}}>加载设备数据...</div>;
 
   const icon = (profile && TYPE_ICONS[profile.type]) || '❓';
@@ -85,10 +90,7 @@ export function DeviceDetail({ ip, onBack }: { ip: string; onBack: () => void })
               <YAxis tick={{fontSize:10, fill:'#8888a0'}} axisLine={false} tickLine={false} width={40} tickFormatter={(v:number) => `${v}KB`} />
               <Tooltip contentStyle={{background:'#1a1a24', border:'1px solid #2a2a3a', borderRadius:8, fontSize:12}}
                 labelFormatter={(l:any) => `时间: ${l}`}
-                formatter={(v:any, n:string) => {
-                  const labels: Record<string,string> = {tcpKB:'TCP', udpKB:'UDP', totalKB:'合计'};
-                  return [`${v} KB`, labels[n] || n];
-                } as any} />
+                formatter={chartFormatter} />
               <Area type="monotone" dataKey="tcpKB" stackId="1" stroke="#6366f1" fill="url(#tcpGrad)" strokeWidth={2} />
               <Area type="monotone" dataKey="udpKB" stackId="1" stroke="#f59e0b" fill="url(#udpGrad)" strokeWidth={2} />
             </AreaChart>
