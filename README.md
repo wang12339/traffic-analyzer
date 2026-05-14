@@ -1,5 +1,11 @@
 # 流量分析系统 · Traffic Analyzer
 
+[![CI](https://github.com/wang12339/traffic-analyzer/actions/workflows/ci.yml/badge.svg)](https://github.com/wang12339/traffic-analyzer/actions/workflows/ci.yml)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Rust](https://img.shields.io/badge/Rust-2024-edition?logo=rust&logoColor=white)](https://www.rust-lang.org/)
+[![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=white)](https://react.dev/)
+[![ClickHouse](https://img.shields.io/badge/ClickHouse-24.3-FFCC01?logo=clickhouse&logoColor=white)](https://clickhouse.com/)
+
 全栈网络流量分析平台。基于 **Rust** + **React** + **ClickHouse**，在 OpenWrt 路由器上抓包，实时识别设备、应用、异常行为。
 
 ## 架构
