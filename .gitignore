@@ -29,8 +29,9 @@ Thumbs.db
 # Logs
 /tmp/*.log
 
-# ClickHouse data (if running locally)
+# ClickHouse data (if running locally in project directory)
 clickhouse-data/
+/clickhouse-data/
 
 # Store / serialized test data
 api/src/store/
