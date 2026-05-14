@@ -14,20 +14,19 @@ fn main() {
 }
 
 #[cfg(target_os = "linux")]
-fn linux_main() -> Result<(), Box<dyn std::error::Error>> {
+fn linux_main() -> anyhow::Result<()> {
     use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
     use std::sync::Arc;
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-    use anyhow::Result;
+    use anyhow;
     use clap::Parser;
     use tokio::io::AsyncWriteExt;
     use tokio::net::TcpStream;
     use tokio::time::sleep;
-    use tracing::{error as log_error, info, warn};
+    use tracing::{info, warn};
     use traffic_core::PacketFrame;
-    macro_rules! error { ($($arg:tt)*) => { log_error!($($arg)*) } }
     use tracing_subscriber::EnvFilter;
 
     const SNAPLEN: usize = 2048;
