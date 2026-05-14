@@ -26,8 +26,8 @@ fn linux_main() -> anyhow::Result<()> {
     use tokio::net::TcpStream;
     use tokio::time::sleep;
     use tracing::{info, warn};
-    use traffic_core::PacketFrame;
     use tracing_subscriber::EnvFilter;
+    use traffic_core::PacketFrame;
 
     const SNAPLEN: usize = 2048;
     const SEND_BUF_SIZE: usize = 512;
