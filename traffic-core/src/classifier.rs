@@ -379,7 +379,11 @@ fn rules_engine(sni: &str, dns: &str, port: u16) -> EngineVerdict {
         let sni_lower = sni.to_lowercase();
         let dns_lower = dns.to_lowercase();
         for rule in RULES {
-            if rule.3.iter().any(|p| sni_lower.contains(p) || dns_lower.contains(p)) {
+            if rule
+                .3
+                .iter()
+                .any(|p| sni_lower.contains(p) || dns_lower.contains(p))
+            {
                 return EngineVerdict {
                     engine: "rules".into(),
                     app_id: rule.0,
@@ -448,14 +452,16 @@ fn port_rules(port: u16) -> EngineVerdict {
         27015 | 27016 => ("Steam", "Game", 206),
         853 => ("DoT", "Network", 207),
         784 | 785 | 786 => ("WireGuard", "VPN", 208),
-        _ => return EngineVerdict {
-            engine: "rules".into(),
-            app_id: 0,
-            app_name: "Unknown".into(),
-            app_category: "Unknown".into(),
-            confidence: 0.0,
-            detail: String::new(),
-        },
+        _ => {
+            return EngineVerdict {
+                engine: "rules".into(),
+                app_id: 0,
+                app_name: "Unknown".into(),
+                app_category: "Unknown".into(),
+                confidence: 0.0,
+                detail: String::new(),
+            }
+        }
     };
     EngineVerdict {
         engine: "rules".into(),

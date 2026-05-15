@@ -16,8 +16,8 @@ fn main() {
 #[cfg(target_os = "linux")]
 fn linux_main() -> anyhow::Result<()> {
     use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
-    use std::sync::Arc;
     use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Arc;
     use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
     use anyhow::Result;

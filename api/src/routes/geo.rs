@@ -1,5 +1,5 @@
-use crate::routes::{ApiResponse, AppState, api_err};
-use actix_web::{HttpResponse, web};
+use crate::routes::{api_err, ApiResponse, AppState};
+use actix_web::{web, HttpResponse};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 

@@ -86,17 +86,14 @@ pub async fn ch_one<T: serde::de::DeserializeOwned>(
     state: &AppState,
     sql: &str,
 ) -> Result<T, String> {
-    ch_query::<T>(state, sql)
-        .await?
-        .pop()
-        .ok_or_else(|| {
-            let preview = if sql.len() > 80 {
-                format!("{}...", &sql[..80])
-            } else {
-                sql.to_string()
-            };
-            format!("ch_one: no rows for query [{}]", preview)
-        })
+    ch_query::<T>(state, sql).await?.pop().ok_or_else(|| {
+        let preview = if sql.len() > 80 {
+            format!("{}...", &sql[..80])
+        } else {
+            sql.to_string()
+        };
+        format!("ch_one: no rows for query [{}]", preview)
+    })
 }
 
 #[derive(Serialize)]

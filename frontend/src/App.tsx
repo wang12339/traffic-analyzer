@@ -1,9 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ConfigProvider, Layout, Menu, Typography, Select, Tag } from 'antd';
 import {
   DashboardOutlined, RadarChartOutlined, AppstoreOutlined,
-  WechatOutlined, LinkOutlined, ApartmentOutlined,
-  BellOutlined, SettingOutlined, ClockCircleOutlined,
+  WechatOutlined, LinkOutlined,
+  SettingOutlined, ClockCircleOutlined,
   GlobalOutlined, MenuFoldOutlined, MenuUnfoldOutlined,
   SafetyOutlined,
 } from '@ant-design/icons';
@@ -19,8 +19,6 @@ import { AppView } from './components/AppView';
 import { DeviceDetail } from './components/DeviceDetail';
 import { HttpView } from './components/HttpView';
 import { AdminPanel } from './components/AdminPanel';
-import { TopologyView } from './components/TopologyView';
-import { AlertsView } from './components/AlertsView';
 import { TimelineView } from './components/TimelineView';
 import { GeoMapPage } from './components/GeoMapPage';
 import { WeChatAnalysis } from './components/WeChatAnalysis';
@@ -28,7 +26,7 @@ import { WeChatAnalysis } from './components/WeChatAnalysis';
 const { Header, Sider, Content } = Layout;
 const { Text } = Typography;
 
-type TabKey = 'dashboard' | 'insights' | 'overview' | 'apps' | 'wechat' | 'http' | 'topo' | 'alerts' | 'timeline' | 'geo' | 'admin';
+type TabKey = 'dashboard' | 'insights' | 'overview' | 'apps' | 'wechat' | 'http' | 'timeline' | 'geo' | 'admin';
 
 const menuItems = [
   { key: 'dashboard', icon: <DashboardOutlined />, label: '仪表盘' },
@@ -38,9 +36,7 @@ const menuItems = [
   { key: 'apps', icon: <AppstoreOutlined />, label: '应用' },
   { key: 'wechat', icon: <WechatOutlined />, label: '微信' },
   { key: 'geo', icon: <GlobalOutlined />, label: '地图' },
-  { key: 'http', icon: <LinkOutlined />, label: 'HTTP' },
-  { key: 'topo', icon: <ApartmentOutlined />, label: '拓扑' },
-  { key: 'alerts', icon: <BellOutlined />, label: '告警' },
+  { key: 'http', icon: <LinkOutlined />, label: 'TLS/SNI' },
   { key: 'admin', icon: <SettingOutlined />, label: '管理' },
 ];
 
@@ -49,7 +45,28 @@ export default function App() {
   const [since, setSince] = useState('30m');
   const [collapsed, setCollapsed] = useState(false);
   const [detailIp, setDetailIp] = useState<string | null>(null);
+  const [uptime, setUptime] = useState(0);
   const stats = useApi(() => getStats(since), [since], { interval: 8000 });
+
+  useEffect(() => {
+    const fetchUptime = () => {
+      fetch('/api/admin/status')
+        .then(r => r.json())
+        .then(j => { if (j.success) setUptime(j.data.uptime_seconds); })
+        .catch(() => {});
+    };
+    fetchUptime();
+    const id = setInterval(fetchUptime, 10000);
+    return () => clearInterval(id);
+  }, []);
+
+  const fmtUptime = (s: number) => {
+    if (s <= 0) return '';
+    const d = Math.floor(s / 86400);
+    const h = Math.floor((s % 86400) / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    return d > 0 ? `${d}d ${h}h ${m}m` : h > 0 ? `${h}h ${m}m` : `${m}m`;
+  };
 
   const handleDeviceClick = (ip: string) => setDetailIp(ip);
 
@@ -65,8 +82,6 @@ export default function App() {
       case 'apps': return <AppView since={since} />;
       case 'wechat': return <WeChatAnalysis />;
       case 'http': return <HttpView />;
-      case 'topo': return <TopologyView />;
-      case 'alerts': return <AlertsView />;
       case 'timeline': return <TimelineView />;
       case 'geo': return <GeoMapPage />;
       case 'admin': return <AdminPanel />;
@@ -163,6 +178,13 @@ export default function App() {
                 <Text style={{ fontSize: 12, color: '#8892c0' }}>
                   {stats.data.total_flows.toLocaleString()} 流 · {stats.data.flows_per_sec.toFixed(1)}/s
                 </Text>
+              )}
+
+              {/* Uptime */}
+              {uptime > 0 && (
+                <Tag icon={<ClockCircleOutlined />} style={{ fontSize: 11, borderRadius: 8, margin: 0, border: '1px solid rgba(99,102,241,0.3)' }}>
+                  运行 {fmtUptime(uptime)}
+                </Tag>
               )}
 
               {/* Time range */}

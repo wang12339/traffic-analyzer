@@ -8,8 +8,8 @@ mod storage;
 mod tcp_reasm;
 mod tls_parser;
 
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result};

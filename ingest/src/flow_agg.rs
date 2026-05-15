@@ -13,9 +13,7 @@ use crate::storage::ClickStore;
 use crate::tcp_reasm::TcpReassembler;
 use chrono::DateTime;
 use tracing::{debug, info};
-use traffic_core::{
-    Classification, FlowKey, FlowRecord, PacketFrame, classifier,
-};
+use traffic_core::{classifier, Classification, FlowKey, FlowRecord, PacketFrame};
 
 /// Per-flow state maintained during aggregation.
 #[derive(Debug)]
@@ -241,14 +239,11 @@ impl FlowAggregator {
         let is_up = ip_from_bytes(&frame.src_ip) == key.src_ip;
         let is_swapped = !is_up;
 
-        let state = self
-            .flows
-            .entry(key.clone())
-            .or_insert_with(|| {
-                let mut s = FlowState::new(ts_ns);
-                s.swapped = is_swapped;
-                s
-            });
+        let state = self.flows.entry(key.clone()).or_insert_with(|| {
+            let mut s = FlowState::new(ts_ns);
+            s.swapped = is_swapped;
+            s
+        });
         state.record_packet(ts_ns, frame.payload.len() + 40 + 20 + 14, is_up);
 
         // Store MAC on first packet
@@ -493,7 +488,6 @@ impl FlowAggregator {
         }
         Ok(())
     }
-
 }
 
 fn ip_from_bytes(bytes: &[u8]) -> IpAddr {

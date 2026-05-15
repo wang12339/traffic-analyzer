@@ -1,5 +1,5 @@
 use crate::routes::*;
-use actix_web::{HttpResponse, web};
+use actix_web::{web, HttpResponse};
 
 use std::process::Command as Shell;
 

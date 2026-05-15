@@ -1,5 +1,5 @@
 use crate::routes::*;
-use actix_web::{HttpResponse, web};
+use actix_web::{web, HttpResponse};
 use serde::Serialize;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use utoipa::ToSchema;
@@ -380,7 +380,11 @@ pub async fn get_insights(state: web::Data<Arc<AppState>>) -> HttpResponse {
     let mut device_profiles = Vec::new();
     let mut alerts = Vec::new();
     for (ip, insight) in &device_map {
-        let mac_prefix = if insight.mac.len() >= 8 { &insight.mac[..8] } else { "" };
+        let mac_prefix = if insight.mac.len() >= 8 {
+            &insight.mac[..8]
+        } else {
+            ""
+        };
         if !primary_ips.contains(ip) || proxy_macs.contains(mac_prefix) {
             continue;
         }

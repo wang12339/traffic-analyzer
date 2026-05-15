@@ -1,7 +1,6 @@
 //! TLS 1.2/1.3 ClientHello parser — extracts SNI, JA3, TLS version.
 //! Handles records that may span multiple TCP segments (via buffered input).
 
-
 use sha2::{Digest, Sha256};
 
 const TLS_CONTENT_HANDSHAKE: u8 = 0x16;

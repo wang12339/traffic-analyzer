@@ -9,7 +9,7 @@
 //!   RFC 9001 — Using TLS to Secure QUIC
 //!   RFC 8446 — The Transport Layer Security (TLS) Protocol Version 1.3
 
-use aes::cipher::{BlockEncrypt, KeyInit, generic_array::GenericArray};
+use aes::cipher::{generic_array::GenericArray, BlockEncrypt, KeyInit};
 use ring::{aead, hkdf};
 
 /// QUIC v1 initial salt (RFC 9001 §5.2)
@@ -361,7 +361,7 @@ fn decrypt_payload(
     aad.extend_from_slice(scid);
     // No token
     aad.extend_from_slice(&[0u8; 4]); // token length = 0
-    // Payload length (before encryption): ct_len + tag_len(16) + pn_len
+                                      // Payload length (before encryption): ct_len + tag_len(16) + pn_len
     let total_len = 1 + pn.len() + ct_len; // pn_byte + pn + ciphertext
     aad.extend_from_slice(&(total_len as u32).to_be_bytes());
     // Packet number

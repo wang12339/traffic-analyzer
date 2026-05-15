@@ -5,7 +5,7 @@ use actix_governor::{Governor, GovernorConfigBuilder};
 use actix_web::body::MessageBody;
 use actix_web::dev::{ServiceRequest, ServiceResponse};
 use actix_web::middleware::Next;
-use actix_web::{App, HttpServer, HttpResponse, middleware, web};
+use actix_web::{middleware, web, App, HttpResponse, HttpServer};
 use clap::Parser;
 use reqwest::Client as HttpClient;
 use std::sync::Arc;
