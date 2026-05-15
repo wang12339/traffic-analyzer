@@ -96,7 +96,7 @@ jobs:
           cd release && tar czf ../traffic-analyzer-${{ github.ref_name }}.tar.gz .
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: traffic-analyzer-*.tar.gz
           generate_release_notes: true
