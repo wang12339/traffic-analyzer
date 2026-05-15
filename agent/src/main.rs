@@ -15,7 +15,7 @@ fn main() {
 
 #[cfg(target_os = "linux")]
 fn linux_main() -> anyhow::Result<()> {
-    use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+    use std::net::IpAddr;
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::Arc;
     use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -27,7 +27,7 @@ fn linux_main() -> anyhow::Result<()> {
     use tokio::time::sleep;
     use tracing::{info, warn};
     use tracing_subscriber::EnvFilter;
-    use traffic_core::PacketFrame;
+    use traffic_core::{ip_from_bytes, ip_to_vec, PacketFrame};
 
     const SNAPLEN: usize = 2048;
     const SEND_BUF_SIZE: usize = 512;
@@ -47,19 +47,6 @@ fn linux_main() -> anyhow::Result<()> {
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
             .as_nanos() as u64
-    }
-
-    fn ip4_bytes(b: &[u8]) -> IpAddr {
-        IpAddr::V4(Ipv4Addr::new(b[0], b[1], b[2], b[3]))
-    }
-    fn ip6_bytes(b: &[u8]) -> IpAddr {
-        IpAddr::V6(Ipv6Addr::from(<[u8; 16]>::try_from(b).unwrap_or([0; 16])))
-    }
-    fn ip_to_vec(ip: IpAddr) -> Vec<u8> {
-        match ip {
-            IpAddr::V4(v) => v.octets().to_vec(),
-            IpAddr::V6(v) => v.octets().to_vec(),
-        }
     }
 
     #[repr(C)]
@@ -92,25 +79,21 @@ fn linux_main() -> anyhow::Result<()> {
                     return None;
                 }
                 let proto = buf[23];
-                let src_ip = ip4_bytes(&buf[26..30]);
-                let dst_ip = ip4_bytes(&buf[30..34]);
-                let (sport, dport, payload_offset) = if proto == 6 || proto == 17 {
-                    let hdr_start = 14 + ihl;
-                    // TCP header length = data_offset >> 2 (4 bits at byte 12 of TCP hdr)
-                    // UDP header is always 8 bytes
-                    let l4_hdr_len = if proto == 6 {
-                        ((buf[hdr_start + 12] >> 4) * 4) as usize
-                    } else {
-                        8usize
-                    };
-                    (
-                        u16::from_be_bytes([buf[hdr_start], buf[hdr_start + 1]]),
-                        u16::from_be_bytes([buf[hdr_start + 2], buf[hdr_start + 3]]),
-                        hdr_start + l4_hdr_len,
-                    )
-                } else {
+                if proto != 6 && proto != 17 {
                     return None;
+                }
+                let src_ip = ip_from_bytes(&buf[26..30]);
+                let dst_ip = ip_from_bytes(&buf[30..34]);
+                let hdr_start = 14 + ihl;
+                let l4_hdr_len = if proto == 6 {
+                    ((buf[hdr_start + 12] >> 4) * 4) as usize
+                } else {
+                    8usize
                 };
+                let sport = u16::from_be_bytes([buf[hdr_start], buf[hdr_start + 1]]);
+                let dport = u16::from_be_bytes([buf[hdr_start + 2], buf[hdr_start + 3]]);
+                let payload_offset = hdr_start + l4_hdr_len;
+                let tcp_flags = if proto == 6 { buf[hdr_start + 13] } else { 0 };
                 let pay_len = (u16::from_be_bytes([buf[16], buf[17]]) as usize)
                     .saturating_sub(ihl)
                     .min(SNAPLEN)
@@ -130,6 +113,7 @@ fn linux_main() -> anyhow::Result<()> {
                     payload: payload.to_vec(),
                     src_mac: mac,
                     snaplen: SNAPLEN as u16,
+                    tcp_flags,
                 })
             }
             0x86DD => {
@@ -140,8 +124,8 @@ fn linux_main() -> anyhow::Result<()> {
                 if proto != 6 && proto != 17 {
                     return None;
                 }
-                let src_ip = ip6_bytes(&buf[22..38]);
-                let dst_ip = ip6_bytes(&buf[38..54]);
+                let src_ip = ip_from_bytes(&buf[22..38]);
+                let dst_ip = ip_from_bytes(&buf[38..54]);
                 let sport = u16::from_be_bytes([buf[54], buf[55]]);
                 let dport = u16::from_be_bytes([buf[56], buf[57]]);
                 let l4_hdr_len = if proto == 6 {
@@ -150,6 +134,7 @@ fn linux_main() -> anyhow::Result<()> {
                     8usize
                 };
                 let payload_offset = 54 + l4_hdr_len;
+                let tcp_flags = if proto == 6 { buf[54 + 13] } else { 0 };
                 let pay_len = (u16::from_be_bytes([buf[4], buf[5]]) as usize)
                     .saturating_sub(l4_hdr_len)
                     .min(SNAPLEN);
@@ -168,6 +153,7 @@ fn linux_main() -> anyhow::Result<()> {
                     payload: payload.to_vec(),
                     src_mac: mac,
                     snaplen: SNAPLEN as u16,
+                    tcp_flags,
                 })
             }
             _ => None,

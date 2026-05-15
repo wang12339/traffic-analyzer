@@ -22,7 +22,7 @@ use tracing::{error, info, warn};
 use tracing_subscriber::EnvFilter;
 use traffic_core::PacketFrame;
 
-use flow_agg::FlowAggregator;
+use flow_agg::ShardedFlowAggregator;
 use storage::ClickStore;
 
 const FRAME_CHAN_SIZE: usize = 65536;
@@ -166,11 +166,12 @@ async fn main() -> Result<()> {
         }
     });
 
-    // Flow aggregation pipeline
-    let agg = Arc::new(tokio::sync::Mutex::new(FlowAggregator::new(
+    // Flow aggregation pipeline (4 shards for reduced lock contention)
+    let agg = Arc::new(ShardedFlowAggregator::new(
+        4,
         FLOW_EXPIRE_SECS,
         store.clone(),
-    )));
+    ));
 
     let run_agg = running.clone();
     let agg_instance = agg.clone();
@@ -179,10 +180,7 @@ async fn main() -> Result<()> {
         while run_agg.load(Ordering::SeqCst) {
             let elapsed = last_flush.elapsed().unwrap_or_default();
             if elapsed >= FLUSH_INTERVAL {
-                let mut a = agg_instance.lock().await;
-                if let Err(e) = a.flush_expired(now_ns()).await {
-                    error!("Flush error: {:#}", e);
-                }
+                agg_instance.flush_expired(now_ns()).await;
                 last_flush = SystemTime::now();
             }
             sleep(Duration::from_millis(200)).await;
@@ -194,8 +192,7 @@ async fn main() -> Result<()> {
     while running.load(Ordering::SeqCst) {
         tokio::select! {
             Some((_, frame)) = pkt_rx.recv() => {
-                let mut a = agg.lock().await;
-                a.process_packet(now_ns(), &frame).await;
+                agg.process_packet(now_ns(), &frame).await;
             }
             _ = sleep(Duration::from_millis(500)) => {}
         }
@@ -203,9 +200,7 @@ async fn main() -> Result<()> {
 
     // Shutdown: flush remaining flows
     info!("Shutting down, flushing remaining flows...");
-    let mut a = agg.lock().await;
-    a.flush_all().await.ok();
-    drop(a);
+    agg.flush_all().await;
 
     agg_handle.abort();
     info!("Ingest server stopped");

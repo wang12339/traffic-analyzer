@@ -35,15 +35,19 @@ pub fn ch_escape(s: &str) -> String {
 }
 
 pub fn since_expr(since: &str) -> String {
-    if since.ends_with('m') {
-        let n: u64 = since.trim_end_matches('m').parse().unwrap_or(15);
-        format!("now() - toIntervalMinute({})", n)
-    } else if since.ends_with('h') {
-        let n: u64 = since.trim_end_matches('h').parse().unwrap_or(1);
-        format!("now() - toIntervalHour({})", n)
-    } else if since.ends_with('d') {
-        let n: u64 = since.trim_end_matches('d').parse().unwrap_or(1);
-        format!("now() - toIntervalDay({})", n)
+    let since = since.trim();
+    if since.is_empty() {
+        return "now() - toIntervalHour(1)".to_string();
+    }
+    if let Some(rest) = since.strip_suffix('m') {
+        let n: u64 = rest.parse().unwrap_or(15);
+        format!("now() - toIntervalMinute({})", n.min(525600))
+    } else if let Some(rest) = since.strip_suffix('h') {
+        let n: u64 = rest.parse().unwrap_or(1);
+        format!("now() - toIntervalHour({})", n.min(8760))
+    } else if let Some(rest) = since.strip_suffix('d') {
+        let n: u64 = rest.parse().unwrap_or(1);
+        format!("now() - toIntervalDay({})", n.min(365))
     } else {
         "now() - toIntervalHour(1)".to_string()
     }

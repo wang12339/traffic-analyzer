@@ -2,8 +2,9 @@
 //! TLS/HTTP/DNS metadata correlation, and application classification.
 
 use std::collections::HashMap;
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+use std::net::IpAddr;
 use std::sync::Arc;
+use traffic_core::{ip_from_bytes, mac_to_string, TCP_FIN, TCP_RST};
 
 use crate::dns_parser;
 use crate::http_parser;
@@ -402,6 +403,11 @@ impl FlowAggregator {
                 state.engines = Some(serde_json::to_string(&multi.engines).unwrap_or_default());
             }
         }
+
+        // TCP FIN/RST: 标记流已结束，下次 flush 立即写出
+        if frame.protocol == 6 && (frame.tcp_flags & (TCP_FIN | TCP_RST)) != 0 {
+            state.finalized = true;
+        }
     }
 
     /// Flush all expired flows to ClickHouse.
@@ -490,29 +496,57 @@ impl FlowAggregator {
     }
 }
 
-fn ip_from_bytes(bytes: &[u8]) -> IpAddr {
-    if bytes.len() == 4 {
-        IpAddr::V4(Ipv4Addr::new(bytes[0], bytes[1], bytes[2], bytes[3]))
-    } else if bytes.len() == 16 {
-        let mut b = [0u8; 16];
-        b.copy_from_slice(bytes);
-        IpAddr::V6(Ipv6Addr::from(b))
-    } else {
-        tracing::warn!("ip_from_bytes: unexpected byte length {}", bytes.len());
-        IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0))
-    }
+// ─── Sharded Flow Aggregator ───
+
+/// 分片流聚合器：将流量按 (src_ip, dst_ip) 哈希分散到 N 个独立 Mutex 中。
+/// 减少锁竞争，适用于多 Agent 高吞吐场景。
+pub struct ShardedFlowAggregator {
+    shards: Vec<tokio::sync::Mutex<FlowAggregator>>,
 }
 
-fn mac_to_string(mac: &[u8; 6]) -> String {
-    format!(
-        "{:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}",
-        mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]
-    )
+impl ShardedFlowAggregator {
+    pub fn new(num_shards: usize, expire_secs: u64, store: Arc<ClickStore>) -> Self {
+        let shards = (0..num_shards)
+            .map(|_| tokio::sync::Mutex::new(FlowAggregator::new(expire_secs, store.clone())))
+            .collect();
+        Self { shards }
+    }
+
+    fn shard_index(&self, frame: &PacketFrame) -> usize {
+        use std::hash::{Hash, Hasher};
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        frame.src_ip.hash(&mut hasher);
+        frame.dst_ip.hash(&mut hasher);
+        (hasher.finish() as usize) % self.shards.len()
+    }
+
+    pub async fn process_packet(&self, ts_ns: u64, frame: &PacketFrame) {
+        let idx = self.shard_index(frame);
+        let mut shard = self.shards[idx].lock().await;
+        shard.process_packet(ts_ns, frame).await;
+    }
+
+    pub async fn flush_expired(&self, now_ns: u64) {
+        for shard in &self.shards {
+            let mut s = shard.lock().await;
+            if let Err(e) = s.flush_expired(now_ns).await {
+                tracing::error!("Flush error: {:#}", e);
+            }
+        }
+    }
+
+    pub async fn flush_all(&self) {
+        for shard in &self.shards {
+            let mut s = shard.lock().await;
+            s.flush_all().await.ok();
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::net::{Ipv4Addr, Ipv6Addr};
     use traffic_core::FlowKey;
 
     #[test]

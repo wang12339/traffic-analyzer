@@ -1,6 +1,6 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use std::net::IpAddr;
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
 pub mod classifier;
 pub use classifier::{Classification, EngineVerdict, FlowFeatures, MultiClassification};
@@ -9,6 +9,11 @@ pub type Port = u16;
 pub type Protocol = u8;
 pub const TCP: u8 = 6;
 pub const UDP: u8 = 17;
+
+// TCP flags (byte 13 of TCP header)
+pub const TCP_FIN: u8 = 0x01;
+pub const TCP_SYN: u8 = 0x02;
+pub const TCP_RST: u8 = 0x04;
 
 /// Wire format: agent → ingest. Length-delimited binary frames.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -22,7 +27,44 @@ pub struct PacketFrame {
     pub payload: Vec<u8>,
     pub src_mac: [u8; 6],
     pub snaplen: u16,
+    /// TCP flags byte (FIN=0x01, SYN=0x02, RST=0x04). 0 for non-TCP.
+    pub tcp_flags: u8,
 }
+
+// ─── Shared utility functions ───
+
+/// Convert 4-byte (IPv4) or 16-byte (IPv6) slice to `IpAddr`.
+/// Returns `0.0.0.0` for invalid lengths and logs a warning.
+pub fn ip_from_bytes(bytes: &[u8]) -> IpAddr {
+    if bytes.len() == 4 {
+        IpAddr::V4(Ipv4Addr::new(bytes[0], bytes[1], bytes[2], bytes[3]))
+    } else if bytes.len() == 16 {
+        let mut b = [0u8; 16];
+        b.copy_from_slice(bytes);
+        IpAddr::V6(Ipv6Addr::from(b))
+    } else {
+        tracing::warn!("ip_from_bytes: unexpected byte length {}", bytes.len());
+        IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0))
+    }
+}
+
+/// Convert `IpAddr` to a Vec of bytes (4 for IPv4, 16 for IPv6).
+pub fn ip_to_vec(ip: IpAddr) -> Vec<u8> {
+    match ip {
+        IpAddr::V4(v) => v.octets().to_vec(),
+        IpAddr::V6(v) => v.octets().to_vec(),
+    }
+}
+
+/// Format a 6-byte MAC address as `xx:xx:xx:xx:xx:xx` (lowercase hex).
+pub fn mac_to_string(mac: &[u8; 6]) -> String {
+    format!(
+        "{:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}",
+        mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]
+    )
+}
+
+// ─── Flow Key ───
 
 /// Direction-aware 5-tuple flow key for TCP reassembly.
 #[derive(Debug, Clone, Hash, Eq, PartialEq, Serialize, Deserialize)]
