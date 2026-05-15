@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/wang12339/traffic-analyzer/actions/workflows/ci.yml/badge.svg)](https://github.com/wang12339/traffic-analyzer/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Rust](https://img.shields.io/badge/Rust-2024-edition?logo=rust&logoColor=white)](https://www.rust-lang.org/)
+[![Rust](https://img.shields.io/badge/Rust-2021-edition?logo=rust&logoColor=white)](https://www.rust-lang.org/)
 [![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=white)](https://react.dev/)
 [![ClickHouse](https://img.shields.io/badge/ClickHouse-24.3-FFCC01?logo=clickhouse&logoColor=white)](https://clickhouse.com/)
 
@@ -41,7 +41,7 @@
 
 ### 依赖
 
-- Rust 2024 edition
+- Rust 2021 edition (Rust >= 1.80)
 - [ClickHouse](https://clickhouse.com/)（>= 23.x）
 - Node.js >= 18
 
@@ -89,7 +89,14 @@ scp target/release/agent root@192.168.1.1:/root/
 ./agent --interface br-lan --ingest <电脑IP>:9100
 ```
 
-### 一键部署
+### Docker Compose 部署
+
+```bash
+docker compose up -d
+# API: localhost:8970, 前端: localhost:3001
+```
+
+### 一键部署（本地）
 
 ```bash
 ./deploy/deploy.sh
@@ -97,29 +104,47 @@ scp target/release/agent root@192.168.1.1:/root/
 
 或使用桌面快捷方式（macOS）：双击 `流量分析系统.command` 开关系统。
 
+## 环境变量
+
+| 变量 | 默认值 | 说明 |
+|------|--------|------|
+| `API_KEY` | `""` (无认证) | 设置后所有 API 请求需携带 `X-API-Key` 头部 |
+| `ALLOWED_ORIGINS` | `*` (全部允许) | 逗号分隔的 CORS 允许源 |
+| `ROUTER_SSH_HOST` | `""` (禁用) | 设置后启用 `/api/agent/*` 远程管理 |
+| `ROUTER_SSH_PASSWORD` | `admin` | 路由器 SSH 密码 |
+| `ROUTER_SSH_PORT` | `22` | 路由器 SSH 端口 |
+| `INGEST_ADDR` | `192.168.66.186:9100` | Agent 管理的 ingest 地址 |
+
+### 启动时设置 API Key
+
+```bash
+API_KEY=my-secret-key RUST_LOG=info ./target/release/api
+```
+
 ## API 示例
 
 ```bash
+# 设置 API Key（可选）
+API_KEY=my-secret-key
+AUTH=""
+# 如果启用了 API Key：
+# AUTH="-H X-API-Key:$API_KEY"
+
 # 概览统计
-curl http://localhost:8970/api/stats
+curl $AUTH http://localhost:8970/api/stats
 
 # 实时流量
-curl http://localhost:8970/api/live
+curl $AUTH http://localhost:8970/api/live
 
 # 设备洞察
-curl http://localhost:8970/api/insights
+curl $AUTH http://localhost:8970/api/insights
 
 # 微信分析
-curl http://localhost:8970/api/analysis/wechat
-
-# 拓扑
-curl http://localhost:8970/api/topology
+curl $AUTH http://localhost:8970/api/analysis/wechat
 
 # CSV 导出
-curl "http://localhost:8970/api/export/csv?since=1h"
+curl $AUTH "http://localhost:8970/api/export/csv?since=1h"
 ```
-
-完整 API 文档见 [API.md](API.md)（可选）。
 
 ## 应用分类
 
@@ -162,26 +187,35 @@ traffic-analyzer/
 ├── ingest/             # 数据接入 & 流处理 (Rust)
 │   └── src/
 │       ├── flow_agg.rs     # 流聚合引擎
-│       ├── classifier.rs   # 应用分类
 │       ├── storage.rs      # ClickHouse 存储层
-│       ├── tcp_reasm.rs    # TCP 重组
-│       ├── tls_parser.rs   # TLS SNI 解析
-│       ├── http_parser.rs  # HTTP 解析
-│       └── dns_parser.rs   # DNS 解析
+│       ├── tcp_reasm.rs    # TCP 重组 & TLS 会话
+│       ├── tls_parser.rs   # TLS Client/Server Hello 解析
+│       ├── http_parser.rs  # HTTP 请求解析
+│       ├── dns_parser.rs   # DNS 查询解析
+│       ├── mysql_parser.rs # MySQL 协议解析
+│       ├── redis_parser.rs # Redis RESP 协议解析
+│       └── quic_parser.rs  # QUIC Initial 包解析
 ├── api/                # REST API 服务 (Actix-web)
 │   └── src/routes/
 │       ├── queries.rs      # 数据查询
 │       ├── analysis.rs     # 分析 & 洞见
-│       └── agent.rs        # Agent 管理
-├── traffic-core/       # 共享类型 & 分类规则
-├── frontend/           # React + TypeScript 仪表盘
+│       └── agent.rs        # Agent 远程管理
+├── traffic-core/       # 共享类型 & 多引擎分类器
+│   └── src/
+│       └── classifier.rs  # 130+ 条应用识别规则
+├── frontend/           # React 19 + TypeScript + Ant Design
 │   └── src/components/
-│       ├── OverviewFull.tsx
+│       ├── DashboardPage.tsx
 │       ├── InsightsBoard.tsx
 │       ├── TopologyView.tsx
 │       ├── AlertsView.tsx
 │       ├── WeChatAnalysis.tsx
-│       └── ...
+│       │   └── ...
+├── deploy/             # 部署脚本 & Dockerfile
+│   ├── deploy.sh
+│   ├── docker-compose.yml
+│   ├── Dockerfile.api
+│   └── Dockerfile.ingest
 ├── mitm_agent.py       # HTTPS 解密代理 (mitmproxy)
-└── deploy/             # 部署脚本
+└── .dockerignore
 ```
