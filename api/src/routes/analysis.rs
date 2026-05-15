@@ -596,7 +596,7 @@ pub async fn get_alerts(state: web::Data<Arc<AppState>>) -> HttpResponse {
 )]
 pub async fn health(state: web::Data<Arc<AppState>>) -> HttpResponse {
     let sql = format!(
-        "SELECT count() as total_flows,0 as total_bytes,0 as apps,0 as devices,0 as snis,0 as domains,0 as fps FROM {}.flows",
+        "SELECT count() as total_flows,0 as total_bytes,0 as apps,0 as devices,0 as snis,0 as domains,0 as fps,0 as tcp_flows,0 as udp_flows,0 as throughput_mbps FROM {}.flows",
         state.database
     );
     match ch_one::<StatsRow>(&state, &sql).await {
