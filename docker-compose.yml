@@ -4,8 +4,10 @@ services:
     ports:
       - "8123:8123"   # HTTP
       - "9000:9000"   # Native
+    # tmpfs: 数据存储在内存中，容器重启后自动清空（开发/演示用）
+    tmpfs:
+      - /var/lib/clickhouse:uid=101,gid=102
     volumes:
-      - ./clickhouse-data:/var/lib/clickhouse
       - ./deploy/clickhouse-init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://localhost:8123/ping"]
@@ -43,4 +45,4 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
-# Data is persisted to ./clickhouse-data/ (bind mount, survives docker compose down)
+# Data lives in tmpfs (memory), cleared on every container restart
