@@ -1,7 +1,7 @@
 use utoipa::OpenApi;
 
 use crate::routes::analysis::{self, DestInfo, LiveDevice, LiveSnapshot};
-use crate::routes::{self, *};
+use crate::routes::*;
 use crate::routes::{agent, queries};
 
 #[derive(OpenApi)]

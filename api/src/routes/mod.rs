@@ -4,12 +4,12 @@ pub mod doc;
 pub mod geo;
 pub mod queries;
 
-use actix_web::HttpResponse;
 use clap::Parser;
 use reqwest::Client as HttpClient;
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
 use utoipa::ToSchema;
+
+pub use std::sync::Arc;
 
 #[derive(Parser)]
 #[command(name = "api", about = "Traffic analysis API server")]
@@ -26,8 +26,12 @@ pub struct AppState {
     pub http: HttpClient,
     pub ch_url: String,
     pub database: String,
-    #[allow(dead_code)]
     pub api_key: String,
+    pub started_at: chrono::DateTime<chrono::Utc>,
+}
+
+pub fn ch_escape(s: &str) -> String {
+    s.replace('\\', "\\\\").replace('\'', "\\'")
 }
 
 pub fn since_expr(since: &str) -> String {
@@ -85,7 +89,14 @@ pub async fn ch_one<T: serde::de::DeserializeOwned>(
     ch_query::<T>(state, sql)
         .await?
         .pop()
-        .ok_or_else(|| "empty".to_string())
+        .ok_or_else(|| {
+            let preview = if sql.len() > 80 {
+                format!("{}...", &sql[..80])
+            } else {
+                sql.to_string()
+            };
+            format!("ch_one: no rows for query [{}]", preview)
+        })
 }
 
 #[derive(Serialize)]
@@ -110,23 +121,6 @@ pub fn api_err(msg: &str) -> ApiResponse<serde_json::Value> {
         success: false,
         data: serde_json::Value::Null,
         error: Some(msg.to_string()),
-    }
-}
-
-#[allow(dead_code)]
-pub fn check_auth(req: &actix_web::HttpRequest, state: &AppState) -> Result<(), HttpResponse> {
-    if std::env::var("API_KEY").is_err() {
-        return Ok(());
-    }
-    let key = req
-        .headers()
-        .get("X-API-Key")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("");
-    if key == state.api_key {
-        Ok(())
-    } else {
-        Err(HttpResponse::Unauthorized().json(serde_json::json!({"error":"invalid api key"})))
     }
 }
 
@@ -484,6 +478,14 @@ pub fn behavior_score(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_ch_escape() {
+        assert_eq!(ch_escape("hello"), "hello");
+        assert_eq!(ch_escape("it's"), "it\\'s");
+        assert_eq!(ch_escape("back\\slash"), "back\\\\slash");
+        assert_eq!(ch_escape("' OR 1=1 --"), "\\' OR 1=1 --");
+    }
 
     #[test]
     fn test_since_expr_minutes() {

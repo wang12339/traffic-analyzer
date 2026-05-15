@@ -1,8 +1,6 @@
 //! TLS 1.2/1.3 ClientHello parser — extracts SNI, JA3, TLS version.
 //! Handles records that may span multiple TCP segments (via buffered input).
 
-// Many const/struct fields are used for documentation/exhaustiveness
-#![allow(dead_code)]
 
 use sha2::{Digest, Sha256};
 
@@ -16,6 +14,7 @@ const TLS_EXT_PADDING: u16 = 0x0015;
 
 /// Parsed TLS ClientHello metadata.
 #[derive(Debug, Clone, Default)]
+#[allow(dead_code)]
 pub struct TlsClientHello {
     pub sni: String,
     pub ja3: String,
@@ -237,6 +236,7 @@ fn compute_ja3(
 
 /// Parse a TLS ServerHello for JA3S (server response fingerprint).
 #[derive(Debug, Clone, Default)]
+#[allow(dead_code)]
 pub struct TlsServerHello {
     pub ja3s: String,
     pub cipher_suite: u16,

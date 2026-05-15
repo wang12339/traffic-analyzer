@@ -17,12 +17,14 @@ export function useApi<T>(
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const fetcherRef = useRef(fetcher);
+  fetcherRef.current = fetcher;
 
   const load = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
-      const result = await fetcher();
+      const result = await fetcherRef.current();
       setData(result);
     } catch (err) {
       if (err instanceof ApiError) {
@@ -33,8 +35,7 @@ export function useApi<T>(
     } finally {
       setLoading(false);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, deps);
+  }, deps); // eslint-disable-line
 
   useEffect(() => {
     load();
@@ -44,7 +45,6 @@ export function useApi<T>(
         if (intervalRef.current) clearInterval(intervalRef.current);
       };
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [load, options?.interval]);
 
   return { data, loading, error, refetch: load };

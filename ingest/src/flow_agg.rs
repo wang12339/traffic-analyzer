@@ -1,8 +1,7 @@
 //! Flow aggregation: per-5-tuple state tracking, packet statistics,
 //! TLS/HTTP/DNS metadata correlation, and application classification.
-#![allow(dead_code)]
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::sync::Arc;
 
@@ -15,7 +14,7 @@ use crate::tcp_reasm::TcpReassembler;
 use chrono::DateTime;
 use tracing::{debug, info};
 use traffic_core::{
-    Classification, FlowFeatures, FlowKey, FlowRecord, MultiClassification, PacketFrame, classifier,
+    Classification, FlowKey, FlowRecord, PacketFrame, classifier,
 };
 
 /// Per-flow state maintained during aggregation.
@@ -59,6 +58,9 @@ struct FlowState {
 
     // Marker
     finalized: bool,
+
+    /// canonical key 是否交换了原始 src/dst 顺序
+    swapped: bool,
 }
 
 impl FlowState {
@@ -90,6 +92,7 @@ impl FlowState {
             src_mac: None,
             device_hostname: None,
             finalized: false,
+            swapped: false,
         }
     }
 
@@ -131,9 +134,7 @@ impl FlowState {
     }
 
     fn to_flow_record(&self, key: &FlowKey, app: &Classification) -> FlowRecord {
-        // Keep timestamps in UTC — timezone conversion is a display-layer concern
         let first = DateTime::from_timestamp_nanos(self.first_seen_ns as i64);
-        let _last = DateTime::from_timestamp_nanos(self.last_seen_ns as i64);
         let duration_ns = self.last_seen_ns.saturating_sub(self.first_seen_ns);
 
         // Merge up/down histograms
@@ -148,14 +149,20 @@ impl FlowState {
             0.0
         };
 
+        let (record_src_ip, record_dst_ip, record_src_port, record_dst_port) = if self.swapped {
+            (key.dst_ip, key.src_ip, key.dst_port, key.src_port)
+        } else {
+            (key.src_ip, key.dst_ip, key.src_port, key.dst_port)
+        };
+
         FlowRecord {
             timestamp: first,
             first_seen: self.first_seen_ns as i64,
             last_seen: self.last_seen_ns as i64,
-            src_ip: key.src_ip.to_string(),
-            dst_ip: key.dst_ip.to_string(),
-            src_port: key.src_port,
-            dst_port: key.dst_port,
+            src_ip: record_src_ip.to_string(),
+            dst_ip: record_dst_ip.to_string(),
+            src_port: record_src_port,
+            dst_port: record_dst_port,
             protocol: if key.protocol == 6 {
                 "TCP".into()
             } else {
@@ -193,8 +200,7 @@ impl FlowState {
 /// Flow aggregator: manages all active flows, their state, and expiry.
 pub struct FlowAggregator {
     flows: HashMap<FlowKey, FlowState>,
-    ip_to_mac: HashMap<IpAddr, (String, String)>, // IP → (MAC, hostname)
-    known_ips: HashSet<IpAddr>,
+    ip_to_mac: HashMap<IpAddr, (String, String, u64)>, // IP → (MAC, hostname, last_seen_ns)
     tcp_reasm: TcpReassembler,
     store: Arc<ClickStore>,
     expire_secs: u64,
@@ -206,7 +212,6 @@ impl FlowAggregator {
         Self {
             flows: HashMap::new(),
             ip_to_mac: HashMap::new(),
-            known_ips: HashSet::new(),
             tcp_reasm: TcpReassembler::new(),
             store,
             expire_secs,
@@ -215,19 +220,15 @@ impl FlowAggregator {
     }
 
     /// Process a single packet frame from the agent.
-    pub async fn process_packet(
-        &mut self,
-        ts_ns: u64,
-        frame: &PacketFrame,
-    ) -> Result<(), anyhow::Error> {
+    pub async fn process_packet(&mut self, ts_ns: u64, frame: &PacketFrame) {
         let src_ip = ip_from_bytes(&frame.src_ip);
         let dst_ip = ip_from_bytes(&frame.dst_ip);
         let src_mac = mac_to_string(&frame.src_mac);
 
-        // Track IP→MAC mapping
+        // Track IP→MAC mapping (with timestamp for TTL eviction)
         if !src_mac.is_empty() {
             self.ip_to_mac
-                .insert(src_ip, (src_mac.clone(), String::new()));
+                .insert(src_ip, (src_mac.clone(), String::new(), ts_ns));
         }
 
         let key = FlowKey::canonical(
@@ -238,11 +239,16 @@ impl FlowAggregator {
             frame.protocol,
         );
         let is_up = ip_from_bytes(&frame.src_ip) == key.src_ip;
+        let is_swapped = !is_up;
 
         let state = self
             .flows
             .entry(key.clone())
-            .or_insert_with(|| FlowState::new(ts_ns));
+            .or_insert_with(|| {
+                let mut s = FlowState::new(ts_ns);
+                s.swapped = is_swapped;
+                s
+            });
         state.record_packet(ts_ns, frame.payload.len() + 40 + 20 + 14, is_up);
 
         // Store MAC on first packet
@@ -253,8 +259,8 @@ impl FlowAggregator {
         // ─── L7 Analysis ───
         if frame.protocol == 6 {
             // TCP
-            // Determine if this packet is from client side
-            let is_client_side = frame.src_port == key.src_port;
+            // Determine if this packet is from client side（使用 is_up 避免 canonical key 交换影响）
+            let is_client_side = is_up;
 
             // TCP reassembly for TLS
             if !frame.payload.is_empty() {
@@ -401,8 +407,6 @@ impl FlowAggregator {
                 state.engines = Some(serde_json::to_string(&multi.engines).unwrap_or_default());
             }
         }
-
-        Ok(())
     }
 
     /// Flush all expired flows to ClickHouse.
@@ -420,6 +424,10 @@ impl FlowAggregator {
             })
             .map(|(k, _)| k.clone())
             .collect();
+
+        // Periodically evict stale IP→MAC mappings (TTL: 1 hour)
+        let mac_ttl = now_ns - 3_600_000_000_000u64; // 1 hour
+        self.ip_to_mac.retain(|_, v| v.2 > mac_ttl);
 
         if expired_keys.is_empty() {
             if self.flows.len() > 0 {
@@ -486,9 +494,6 @@ impl FlowAggregator {
         Ok(())
     }
 
-    pub fn active_flow_count(&self) -> usize {
-        self.flows.len()
-    }
 }
 
 fn ip_from_bytes(bytes: &[u8]) -> IpAddr {
@@ -617,6 +622,7 @@ mod tests {
         state.http_host = Some("example.com".into());
         state.src_mac = Some("aa:bb:cc:dd:ee:ff".into());
 
+        state.swapped = true; // canonical 交换了 src(10.x) 和 dst(8.x)
         let key = FlowKey::canonical(
             IpAddr::V4(Ipv4Addr::new(10, 0, 0, 5)),
             IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8)),
@@ -627,10 +633,9 @@ mod tests {
         let app = Classification::named(1, "YouTube", "Video", 0.85);
         let record = state.to_flow_record(&key, &app);
 
-        // FlowKey::canonical normalizes (src,dst) ordering. Since 10.x > 8.x,
-        // the order is swapped, making src=8.8.8.8 and dst=10.0.0.5.
-        assert_eq!(record.src_ip, "8.8.8.8");
-        assert_eq!(record.dst_ip, "10.0.0.5");
+        // to_flow_record 使用 swapped 标记恢复原始方向
+        assert_eq!(record.src_ip, "10.0.0.5");
+        assert_eq!(record.dst_ip, "8.8.8.8");
         assert_eq!(record.sni, "example.com");
         assert_eq!(record.app_name, "YouTube");
         assert_eq!(record.app_category, "Video");

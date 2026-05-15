@@ -127,20 +127,4 @@ impl TcpReassembler {
             .remove(key)
             .map(|s| (s.up_bytes, s.down_bytes, s.client_hello, s.server_hello))
     }
-
-    /// Get bytes tracked for a connection without consuming state.
-    pub fn get_bytes(&self, key: &FlowKey) -> Option<(u64, u64)> {
-        self.connections
-            .get(key)
-            .map(|s| (s.up_bytes, s.down_bytes))
-    }
-
-    /// Clean up state for expired flows.
-    pub fn remove_expired(&mut self, active_keys: &std::collections::HashSet<FlowKey>) {
-        self.connections.retain(|k, _| active_keys.contains(k));
-    }
-
-    pub fn len(&self) -> usize {
-        self.connections.len()
-    }
 }

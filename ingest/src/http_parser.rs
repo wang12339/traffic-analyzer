@@ -1,9 +1,9 @@
 //! Minimal HTTP request parser — extracts method, host, and user-agent.
 //! Only used for cleartext HTTP traffic (port 80, 8080, etc.).
-#![allow(dead_code)]
 
 /// Parsed HTTP request metadata.
 #[derive(Debug, Clone, Default)]
+#[allow(dead_code)]
 pub struct HttpRequestMeta {
     pub method: String,
     pub host: String,

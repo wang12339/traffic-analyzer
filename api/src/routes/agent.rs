@@ -4,14 +4,22 @@ use actix_web::{HttpResponse, web};
 use std::process::Command as Shell;
 
 fn router_ssh(cmd: &str) -> String {
+    let host = match std::env::var("ROUTER_SSH_HOST") {
+        Ok(h) if !h.is_empty() => h,
+        _ => return "SSH router management disabled: set ROUTER_SSH_HOST env var".into(),
+    };
+    let password = std::env::var("ROUTER_SSH_PASSWORD").unwrap_or_else(|_| "admin".into());
+    let port = std::env::var("ROUTER_SSH_PORT").unwrap_or_else(|_| "22".into());
     let output = Shell::new("sshpass")
         .args([
             "-p",
-            "admin",
+            &password,
             "ssh",
             "-o",
             "StrictHostKeyChecking=no",
-            "root@192.168.66.1",
+            "-p",
+            &port,
+            &format!("root@{}", host),
             cmd,
         ])
         .output();
@@ -59,9 +67,11 @@ pub async fn agent_status() -> HttpResponse {
     tag = "Agent"
 )]
 pub async fn agent_start() -> HttpResponse {
-    let r = router_ssh(
-        "killall agent 2>/dev/null; sleep 1; nohup /root/agent -n br-lan -s 192.168.66.186:9100 > /tmp/agent.log 2>&1 &",
-    );
+    let ingest = std::env::var("INGEST_ADDR").unwrap_or_else(|_| "192.168.66.186:9100".into());
+    let r = router_ssh(&format!(
+        "killall agent 2>/dev/null; sleep 1; nohup /root/agent -n br-lan -s {} > /tmp/agent.log 2>&1 &",
+        ingest
+    ));
     HttpResponse::Ok().json(ApiResponse::ok(
         serde_json::json!({"result": "started", "detail": r}),
     ))
@@ -91,9 +101,11 @@ pub async fn agent_stop() -> HttpResponse {
     tag = "Agent"
 )]
 pub async fn agent_restart() -> HttpResponse {
-    let r = router_ssh(
-        "killall agent 2>/dev/null; sleep 2; nohup /root/agent -n br-lan -s 192.168.66.186:9100 > /tmp/agent.log 2>&1 &",
-    );
+    let ingest = std::env::var("INGEST_ADDR").unwrap_or_else(|_| "192.168.66.186:9100".into());
+    let r = router_ssh(&format!(
+        "killall agent 2>/dev/null; sleep 2; nohup /root/agent -n br-lan -s {} > /tmp/agent.log 2>&1 &",
+        ingest
+    ));
     HttpResponse::Ok().json(ApiResponse::ok(
         serde_json::json!({"result": "restarted", "detail": r}),
     ))

@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 export function AdminPanel() {
   const [status, setStatus] = useState<any>(null);
   const [activeTab, setActiveTab] = useState('overview');
-  const [apiKey, setApiKey] = useState(localStorage.getItem('api_key') || '');
+  const [apiKey, setApiKey] = useState(sessionStorage.getItem('api_key') || '');
 
   useEffect(() => {
     if (!apiKey) return;
@@ -20,7 +20,7 @@ export function AdminPanel() {
   if (!apiKey) return (
     <div style={{maxWidth:400,margin:'60px auto',background:'var(--bg-card)',borderRadius:12,border:'1px solid var(--border)',padding:24}}>
       <h2 style={{fontSize:18,fontWeight:600,marginBottom:16}}>管理后台登录</h2>
-      <input placeholder="输入 API Key" value={apiKey} onChange={e=>{setApiKey(e.target.value);localStorage.setItem('api_key',e.target.value)}}
+      <input placeholder="输入 API Key" value={apiKey} onChange={e=>{setApiKey(e.target.value);sessionStorage.setItem('api_key',e.target.value)}}
         style={{width:'100%',padding:'10px 14px',background:'var(--bg-hover)',border:'1px solid var(--border)',borderRadius:8,color:'var(--text-primary)',fontSize:14,marginBottom:12}} />
       <button onClick={() => {}} style={{width:'100%',padding:'10px',background:'var(--accent)',color:'#fff',border:'none',borderRadius:8,cursor:'pointer'}}>登录</button>
     </div>
@@ -87,7 +87,7 @@ export function AdminPanel() {
         </p>
       </div>}
 
-      <button onClick={()=>{setApiKey('');localStorage.removeItem('api_key')}}
+      <button onClick={()=>{setApiKey('');sessionStorage.removeItem('api_key')}}
         style={{marginTop:20,padding:'8px 16px',background:'transparent',border:'1px solid var(--danger)',color:'var(--danger)',borderRadius:8,cursor:'pointer',fontSize:13}}>
         退出登录
       </button>

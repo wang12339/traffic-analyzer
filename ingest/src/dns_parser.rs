@@ -20,14 +20,11 @@ pub fn parse_dns_query(buf: &[u8]) -> Option<String> {
         }
         let len = buf[pos];
         if len == 0 {
-            pos += 1;
-            break;
+            break; // end of domain name
         }
         // Compression pointer (top 2 bits set)
         if len & 0xC0 == 0xC0 {
-            // Pointer to elsewhere in the message — skip
-            pos += 2;
-            break;
+            break; // compression pointer, skip
         }
         pos += 1;
         if pos + len as usize > buf.len() {

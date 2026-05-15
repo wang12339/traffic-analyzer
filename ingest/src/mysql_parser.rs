@@ -4,6 +4,7 @@
 use std::str;
 
 /// MySQL handshake metadata (from server greeting).
+#[allow(dead_code)]
 pub struct MysqlHandshake {
     pub server_version: String,
     pub connection_id: u32,
@@ -11,6 +12,7 @@ pub struct MysqlHandshake {
 }
 
 /// MySQL command metadata (from client commands).
+#[allow(dead_code)]
 pub struct MysqlCommand {
     pub command_type: String, // "QUERY", "INIT_DB", "PING", "QUIT", "STMT_PREPARE"
     pub query_summary: String, // first 40 chars of query

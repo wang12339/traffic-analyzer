@@ -57,17 +57,19 @@ pub async fn get_flows(state: web::Data<Arc<AppState>>, q: web::Query<FlowQuery>
     let mut cond = format!("timestamp >= {}", se);
     if let Some(ref ip) = q.search_ip {
         if !ip.is_empty() {
+            let e = ch_escape(ip);
             cond.push_str(&format!(
                 " AND (src_ip LIKE '%{}%' OR dst_ip LIKE '%{}%')",
-                ip, ip
+                e, e
             ));
         }
     }
     if let Some(ref d) = q.search_domain {
         if !d.is_empty() {
+            let e = ch_escape(d);
             cond.push_str(&format!(
                 " AND (sni LIKE '%{}%' OR dns_domain LIKE '%{}%')",
-                d, d
+                e, e
             ));
         }
     }
@@ -226,17 +228,19 @@ pub async fn export_csv(
     let mut cond = format!("timestamp >= {}", se);
     if let Some(ref ip) = query.search_ip {
         if !ip.is_empty() {
+            let e = ch_escape(ip);
             cond.push_str(&format!(
                 " AND (src_ip LIKE '%{}%' OR dst_ip LIKE '%{}%')",
-                ip, ip
+                e, e
             ));
         }
     }
     if let Some(ref d) = query.search_domain {
         if !d.is_empty() {
+            let e = ch_escape(d);
             cond.push_str(&format!(
                 " AND (sni LIKE '%{}%' OR dns_domain LIKE '%{}%')",
-                d, d
+                e, e
             ));
         }
     }

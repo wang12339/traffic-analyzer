@@ -4,6 +4,15 @@ use serde::Serialize;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use utoipa::ToSchema;
 
+struct DeviceInsight {
+    mac: String,
+    domains: Vec<String>,
+    apps: Vec<String>,
+    bytes: f64,
+    flows: u64,
+    dest_set: HashSet<String>,
+}
+
 #[derive(Serialize, ToSchema)]
 pub struct LiveSnapshot {
     pub timestamp: String,
@@ -43,6 +52,7 @@ pub async fn get_live(state: web::Data<Arc<AppState>>) -> HttpResponse {
         Err(e) => return HttpResponse::InternalServerError().json(api_err(&e)),
     };
     let mut devs: BTreeMap<String, LiveDevice> = BTreeMap::new();
+    let mut seen_dests: HashMap<String, HashSet<String>> = HashMap::new();
     let mut base_cache: HashMap<String, HashSet<String>> = HashMap::new();
     for row in &rows {
         let ip = row["src_ip"].as_str().unwrap_or("").to_string();
@@ -69,7 +79,9 @@ pub async fn get_live(state: web::Data<Arc<AppState>>) -> HttpResponse {
         } else {
             continue;
         };
-        if !e.destinations.iter().any(|d| d.dest == dest) {
+        let seen = seen_dests.entry(ip.clone()).or_default();
+        if !seen.contains(&dest) {
+            seen.insert(dest.clone());
             e.destinations.push(DestInfo {
                 dest,
                 app: app.to_string(),
@@ -124,11 +136,13 @@ pub async fn get_device_current(
     path: web::Path<String>,
 ) -> HttpResponse {
     let ip = path.into_inner();
+    let eip = ch_escape(&ip);
     let sql = format!(
-        "SELECT sni,dns_domain,app_name,count() as flows,sum(bytes_up+bytes_down) as bytes \
+        "SELECT sni,dns_domain,app_name,count() as flows,sum(bytes_up+bytes_down) as bytes,\
+         any(engines) as engines \
          FROM {}.flows WHERE src_ip='{}' AND timestamp>=now()-toIntervalMinute(5) \
          GROUP BY sni,dns_domain,app_name ORDER BY bytes DESC LIMIT 20",
-        state.database, ip
+        state.database, eip
     );
     match ch_query::<serde_json::Value>(&state, &sql).await {
         Ok(rows) => HttpResponse::Ok().json(ApiResponse::ok(rows)),
@@ -152,15 +166,16 @@ pub async fn get_device_anomalies(
     path: web::Path<String>,
 ) -> HttpResponse {
     let ip = path.into_inner();
+    let eip = ch_escape(&ip);
     let recent_sql = format!(
         "SELECT sni as d FROM {}.flows WHERE src_ip='{}' AND timestamp>=now()-toIntervalMinute(5) AND sni!='' \
          UNION ALL SELECT dns_domain as d FROM {}.flows WHERE src_ip='{}' AND timestamp>=now()-toIntervalMinute(5) AND dns_domain!=''",
-        state.database, ip, state.database, ip
+        state.database, eip, state.database, eip
     );
     let base_sql = format!(
         "SELECT DISTINCT sni as d FROM {}.flows WHERE src_ip='{}' AND timestamp>=now()-toIntervalDay(1) AND timestamp<now()-toIntervalMinute(5) AND sni!='' \
          UNION ALL SELECT DISTINCT dns_domain as d FROM {}.flows WHERE src_ip='{}' AND timestamp>=now()-toIntervalDay(1) AND timestamp<now()-toIntervalMinute(5) AND dns_domain!=''",
-        state.database, ip, state.database, ip
+        state.database, eip, state.database, eip
     );
     let (recent, baseline) = match tokio::join!(
         ch_query::<serde_json::Value>(&state, &recent_sql),
@@ -216,7 +231,7 @@ pub async fn get_device_trends(
          sum(if(protocol='UDP',bytes_up+bytes_down,0)) as udp_bytes \
          FROM {}.flows WHERE src_ip='{}' AND timestamp>={} GROUP BY bucket ORDER BY bucket",
         state.database,
-        ip.replace('\'', "\\'"),
+        ch_escape(&ip),
         se
     );
     match ch_query::<serde_json::Value>(&state, &sql).await {
@@ -249,14 +264,14 @@ pub async fn get_device_tls_fingerprints(
          GROUP BY tls_signature_hash,ja3,ja3s,tls_version \
          ORDER BY cnt DESC LIMIT 20",
         state.database,
-        ip.replace('\'', "\\'"),
+        ch_escape(&ip),
     );
     let count_sql = format!(
         "SELECT countDistinct(tls_signature_hash) as distinct_sigs \
          FROM {}.flows WHERE src_ip='{}' AND tls_signature_hash!='' \
          AND timestamp>=now()-toIntervalDay(1)",
         state.database,
-        ip.replace('\'', "\\'"),
+        ch_escape(&ip),
     );
     match tokio::join!(
         ch_query::<serde_json::Value>(&state, &sql),
@@ -286,12 +301,13 @@ pub async fn get_device_detail(
     path: web::Path<String>,
 ) -> HttpResponse {
     let ip = path.into_inner();
+    let eip = ch_escape(&ip);
     let sql = format!(
         "SELECT src_ip,app_name,app_category,count() as flow_count,\
         sum(bytes_up+bytes_down) as total_bytes,any(sni) as sni,any(dns_domain) as dns_domain \
         FROM {}.flows WHERE src_ip='{}' AND timestamp>=now()-toIntervalDay(1) \
         GROUP BY src_ip,app_name,app_category ORDER BY total_bytes DESC LIMIT 50",
-        state.database, ip
+        state.database, eip
     );
     match ch_query::<DeviceDetailRow>(&state, &sql).await {
         Ok(rows) => HttpResponse::Ok().json(ApiResponse::ok(rows)),
@@ -316,10 +332,7 @@ pub async fn get_insights(state: web::Data<Arc<AppState>>) -> HttpResponse {
         Ok(r) => r,
         Err(e) => return HttpResponse::InternalServerError().json(api_err(&e)),
     };
-    let mut device_map: HashMap<
-        String,
-        (String, Vec<String>, Vec<String>, f64, u64, HashSet<String>),
-    > = HashMap::new();
+    let mut device_map: HashMap<String, DeviceInsight> = HashMap::new();
     for row in &rows {
         let ip = row["src_ip"].as_str().unwrap_or("").to_string();
         let mac = row["src_mac"].as_str().unwrap_or("").to_string();
@@ -328,28 +341,34 @@ pub async fn get_insights(state: web::Data<Arc<AppState>>) -> HttpResponse {
         let dns = row["dns_domain"].as_str().unwrap_or("").to_string();
         let bytes = row["bytes"].as_f64().unwrap_or(0.0);
         let flows = row["flows"].as_i64().unwrap_or(0) as u64;
-        let entry = device_map
-            .entry(ip)
-            .or_insert_with(|| (mac, vec![], vec![], 0.0, 0, HashSet::new()));
-        entry.2.push(app.clone());
-        entry.3 += bytes;
-        entry.4 += flows;
+        let entry = device_map.entry(ip).or_insert_with(|| DeviceInsight {
+            mac,
+            domains: vec![],
+            apps: vec![],
+            bytes: 0.0,
+            flows: 0,
+            dest_set: HashSet::new(),
+        });
+        entry.apps.push(app.clone());
+        entry.bytes += bytes;
+        entry.flows += flows;
         if !sni.is_empty() {
-            entry.1.push(sni.clone());
-            entry.5.insert(sni);
+            entry.domains.push(sni.clone());
+            entry.dest_set.insert(sni);
         }
         if !dns.is_empty() {
-            entry.1.push(dns.clone());
-            entry.5.insert(dns);
+            entry.domains.push(dns.clone());
+            entry.dest_set.insert(dns);
         }
     }
     // Deduplicate by MAC: keep the IP with most traffic for each MAC
-    let mut mac_primary: HashMap<String, (String, f64)> = HashMap::new(); // MAC → (primary_IP, max_bytes)
-    for (ip, (_mac, _apps, _domains, bytes, _flows, _dest_set)) in &device_map {
-        let key = _mac.clone();
-        let entry = mac_primary.entry(key).or_insert_with(|| (ip.clone(), 0.0));
-        if *bytes > entry.1 {
-            *entry = (ip.clone(), *bytes);
+    let mut mac_primary: HashMap<String, (String, f64)> = HashMap::new();
+    for (ip, insight) in &device_map {
+        let entry = mac_primary
+            .entry(insight.mac.clone())
+            .or_insert_with(|| (ip.clone(), 0.0));
+        if insight.bytes > entry.1 {
+            *entry = (ip.clone(), insight.bytes);
         }
     }
     let primary_ips: HashSet<String> = mac_primary.values().map(|(ip, _)| ip.clone()).collect();
@@ -360,24 +379,23 @@ pub async fn get_insights(state: web::Data<Arc<AppState>>) -> HttpResponse {
 
     let mut device_profiles = Vec::new();
     let mut alerts = Vec::new();
-    for (ip, (mac, apps, _domains, bytes, flows, dest_set)) in &device_map {
-        let mac_prefix = if mac.len() >= 8 { &mac[..8] } else { "" };
-        // Skip non-primary IPs (same MAC, different IP) and proxy virtual IPs
+    for (ip, insight) in &device_map {
+        let mac_prefix = if insight.mac.len() >= 8 { &insight.mac[..8] } else { "" };
         if !primary_ips.contains(ip) || proxy_macs.contains(mac_prefix) {
             continue;
         }
-        let dests: Vec<String> = dest_set.iter().cloned().collect();
+        let dests: Vec<String> = insight.dest_set.iter().cloned().collect();
         let uniq_apps: Vec<String> = {
-            let mut s: Vec<String> = apps.clone();
+            let mut s: Vec<String> = insight.apps.clone();
             s.sort();
             s.dedup();
             s.into_iter()
                 .filter(|a| !a.is_empty() && a != "Unknown")
                 .collect()
         };
-        let (dev_type, os, conf) = profile_device(&uniq_apps, &dests, &mac);
-        let model = identify_device_model(&uniq_apps, &dests, &mac, "");
-        let ip_esc = ip.replace('\'', "\\'");
+        let (dev_type, os, conf) = profile_device(&uniq_apps, &dests, &insight.mac);
+        let model = identify_device_model(&uniq_apps, &dests, &insight.mac, "");
+        let ip_esc = ch_escape(&ip);
         let base_sql = format!(
             "SELECT COUNT(DISTINCT sni)+COUNT(DISTINCT dns_domain) as c FROM {}.flows \
              WHERE src_ip='{}' AND timestamp>=now()-toIntervalDay(1) AND timestamp<now()-toIntervalMinute(5)",
@@ -395,8 +413,8 @@ pub async fn get_insights(state: web::Data<Arc<AppState>>) -> HttpResponse {
                      (sni='{}' OR dns_domain='{}') AND timestamp<now()-toIntervalMinute(5) LIMIT 1",
                     state.database,
                     ip_esc,
-                    d.replace('\'', "\\'"),
-                    d.replace('\'', "\\'")
+                    ch_escape(d),
+                    ch_escape(d)
                 );
                 if let Ok(rows) = ch_query::<serde_json::Value>(&state, &check_sql).await {
                     if rows.first().and_then(|v| v["c"].as_i64()).unwrap_or(0) == 0 {
@@ -410,7 +428,7 @@ pub async fn get_insights(state: web::Data<Arc<AppState>>) -> HttpResponse {
             dests.len(),
             uniq_apps.len(),
             baseline_size,
-            *flows,
+            insight.flows,
         );
         if risk > 50.0 {
             alerts.push(serde_json::json!({
@@ -421,9 +439,9 @@ pub async fn get_insights(state: web::Data<Arc<AppState>>) -> HttpResponse {
             }));
         }
         device_profiles.push(serde_json::json!({
-            "ip": ip, "mac": mac, "type": dev_type, "os": os, "confidence": conf,
+            "ip": ip, "mac": insight.mac, "type": dev_type, "os": os, "confidence": conf,
             "apps": uniq_apps, "active_destinations": dests.len(), "baseline_size": baseline_size,
-            "first_seen": first_seen, "risk_score": risk as u32, "bytes_total": bytes, "flows_total": flows,
+            "first_seen": first_seen, "risk_score": risk as u32, "bytes_total": insight.bytes, "flows_total": insight.flows,
         }));
     }
     device_profiles.sort_by(|a, b| {
@@ -660,6 +678,7 @@ pub async fn health(state: web::Data<Arc<AppState>>) -> HttpResponse {
     tag = "Admin"
 )]
 pub async fn get_admin_status(state: web::Data<Arc<AppState>>) -> HttpResponse {
+    let uptime = (chrono::Utc::now() - state.started_at).num_seconds().max(0);
     let sql_f = format!(
         "SELECT count() as c, max(timestamp) as t FROM {}.flows",
         state.database
@@ -669,11 +688,15 @@ pub async fn get_admin_status(state: web::Data<Arc<AppState>>) -> HttpResponse {
         ch_one::<serde_json::Value>(&state, &sql_f),
         ch_one::<serde_json::Value>(&state, &sql_h),
     );
-    match (r1, r2) {
-        (Ok(f), Ok(h)) => HttpResponse::Ok().json(ApiResponse::ok(serde_json::json!({
-            "flows": f["c"], "last_flow": f["t"], "http_sessions": h["c"],
-            "version": "1.0.0", "status": "ok",
-        }))),
-        _ => HttpResponse::InternalServerError().json(api_err("query failed")),
+    let mut resp = serde_json::json!({
+        "uptime_seconds": uptime, "version": "1.0.0",
+    });
+    if let Ok(f) = r1 {
+        resp["flows"] = f["c"].clone();
+        resp["last_flow"] = f["t"].clone();
     }
+    if let Ok(h) = r2 {
+        resp["http_sessions"] = h["c"].clone();
+    }
+    HttpResponse::Ok().json(ApiResponse::ok(resp))
 }

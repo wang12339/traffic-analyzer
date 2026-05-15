@@ -374,24 +374,31 @@ static RULES: &[Rule] = &[
 struct Rule(u32, &'static str, &'static str, &'static [&'static str]);
 
 fn rules_engine(sni: &str, dns: &str, port: u16) -> EngineVerdict {
-    let combined = format!("{} {}", sni.to_lowercase(), dns.to_lowercase());
-
-    // 1. SNI/DNS 规则匹配
-    for rule in RULES {
-        if rule.3.iter().any(|p| combined.contains(p)) {
-            return EngineVerdict {
-                engine: "rules".into(),
-                app_id: rule.0,
-                app_name: rule.1.into(),
-                app_category: rule.2.into(),
-                confidence: 0.85,
-                detail: format!("规则匹配: {} → {} (ID:{})", rule.3[0], rule.1, rule.0),
-            };
+    // 1. SNI/DNS 规则匹配（仅当有数据时执行）
+    if !sni.is_empty() || !dns.is_empty() {
+        let sni_lower = sni.to_lowercase();
+        let dns_lower = dns.to_lowercase();
+        for rule in RULES {
+            if rule.3.iter().any(|p| sni_lower.contains(p) || dns_lower.contains(p)) {
+                return EngineVerdict {
+                    engine: "rules".into(),
+                    app_id: rule.0,
+                    app_name: rule.1.into(),
+                    app_category: rule.2.into(),
+                    confidence: 0.85,
+                    detail: format!("规则匹配: {} → {} (ID:{})", rule.3[0], rule.1, rule.0),
+                };
+            }
         }
     }
 
     // 2. 端口回退
-    let (name, cat, id) = match port {
+    port_rules(port)
+}
+
+/// 基于端口的协议识别（惰性分配：仅在匹配时 app_name/category 分配一次）
+fn port_rules(port: u16) -> EngineVerdict {
+    let (name, cat, id): (&str, &str, u32) = match port {
         53 => ("DNS", "Network", 160),
         67 | 68 => ("DHCP", "Network", 161),
         80 => ("HTTP", "Web", 162),
@@ -441,16 +448,14 @@ fn rules_engine(sni: &str, dns: &str, port: u16) -> EngineVerdict {
         27015 | 27016 => ("Steam", "Game", 206),
         853 => ("DoT", "Network", 207),
         784 | 785 | 786 => ("WireGuard", "VPN", 208),
-        _ => {
-            return EngineVerdict {
-                engine: "rules".into(),
-                app_id: 0,
-                app_name: "Unknown".into(),
-                app_category: "Unknown".into(),
-                confidence: 0.0,
-                detail: format!("端口 {} 未匹配任何已知服务", port),
-            };
-        }
+        _ => return EngineVerdict {
+            engine: "rules".into(),
+            app_id: 0,
+            app_name: "Unknown".into(),
+            app_category: "Unknown".into(),
+            confidence: 0.0,
+            detail: String::new(),
+        },
     };
     EngineVerdict {
         engine: "rules".into(),
@@ -458,7 +463,7 @@ fn rules_engine(sni: &str, dns: &str, port: u16) -> EngineVerdict {
         app_name: name.into(),
         app_category: cat.into(),
         confidence: 0.6,
-        detail: format!("端口回退: {} → {} (ID:{})", port, name, id),
+        detail: String::new(),
     }
 }
 

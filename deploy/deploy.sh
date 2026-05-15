@@ -12,7 +12,7 @@ echo "════════════════════════�
 CLICKHOUSE_PORT=${CLICKHOUSE_PORT:-8123}
 INGEST_PORT=${INGEST_PORT:-9100}
 UDP_PORT=${UDP_PORT:-2055}
-API_PORT=${API_PORT:-8080}
+API_PORT=${API_PORT:-8970}
 FRONTEND_PORT=${FRONTEND_PORT:-3001}
 API_KEY=${API_KEY:-traffic-admin-$(uuidgen 2>/dev/null || echo "changeme")}
 DB_NAME=${DB_NAME:-traffic}
@@ -50,7 +50,7 @@ API_KEY="$API_KEY" RUST_LOG=info nohup "$PROJECT/target/debug/api" \
     --listen "0.0.0.0:$API_PORT" \
     --clickhouse "localhost:$CLICKHOUSE_PORT" \
     --db-name "$DB_NAME" > /tmp/api.log 2>&1 &
-echo "   API: PID $! (:8080)"
+echo "   API: PID $! (:8970)"
 
 # Frontend
 cd "$PROJECT/frontend"

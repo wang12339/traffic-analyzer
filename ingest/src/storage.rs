@@ -1,54 +1,14 @@
 //! ClickHouse storage layer: schema management, batch inserts.
-#![allow(dead_code)]
 
 use anyhow::{Context, Result};
-use clickhouse::{Client, Row};
-use serde::Serialize;
+use clickhouse::Client;
 use tracing::{info, warn};
 
-/// ClickHouse row matching the flows table schema.
-#[derive(Debug, Serialize, Row)]
-pub struct FlowRow {
-    pub timestamp: String, // DateTime64(6) as ISO string
-    pub first_seen: i64,
-    pub last_seen: i64,
-    pub src_ip: String,
-    pub dst_ip: String,
-    pub src_port: u16,
-    pub dst_port: u16,
-    pub protocol: String,
-    pub sni: String,
-    pub ja3: String,
-    pub ja3s: String,
-    pub tls_version: String,
-    pub server_cipher_suite: u16,
-    pub tls_signature_hash: String,
-    pub dns_domain: String,
-    pub http_host: String,
-    pub http_method: String,
-    pub http_ua: String,
-    pub packets_up: u32,
-    pub packets_down: u32,
-    pub bytes_up: i64,
-    pub bytes_down: i64,
-    pub duration_ms: i64,
-    pub pkt_size_hist: String, // serialized JSON array
-    pub pkt_iat_mean_us: f64,
-    pub app_id: u32,
-    pub app_name: String,
-    pub app_category: String,
-    pub confidence: f32,
-    pub src_mac: String,
-    pub device_manufacturer: String,
-    pub device_hostname: String,
-    pub engines: String,
-}
-
 pub struct ClickStore {
-    client: Client,               // Native clickhouse crate client
     http_client: reqwest::Client, // HTTP client for JSONEachRow inserts
     database: String,
     ch_http_url: String,
+    _client: clickhouse::Client, // Used for DDL at init time only
 }
 
 impl ClickStore {
@@ -102,9 +62,9 @@ impl ClickStore {
                 device_manufacturer String,
                 device_hostname String,
                 engines         String
-            ) ENGINE = MergeTree
+            ) ENGINE = ReplacingMergeTree(last_seen)
             PARTITION BY toYYYYMM(timestamp)
-            ORDER BY (timestamp, src_ip)
+            ORDER BY (timestamp, src_ip, first_seen)
             TTL toDateTime(timestamp) + INTERVAL 90 DAY
         "#,
             database
@@ -155,7 +115,7 @@ impl ClickStore {
 
         info!("ClickHouse storage initialized (database: {})", database);
         Ok(Self {
-            client,
+            _client: client,
             http_client: reqwest::Client::builder()
                 .timeout(std::time::Duration::from_secs(5))
                 .build()?,
@@ -449,49 +409,4 @@ impl ClickStore {
         }
         Ok(())
     }
-
-    pub fn client(&self) -> &Client {
-        &self.client
-    }
-    pub fn database(&self) -> &str {
-        &self.database
-    }
-}
-
-/// Compat row for Python agent JSON flows
-#[derive(serde::Serialize, clickhouse::Row)]
-struct FlowRowCompat<'a> {
-    timestamp: &'a str,
-    first_seen: i64,
-    last_seen: i64,
-    src_ip: &'a str,
-    dst_ip: &'a str,
-    src_port: u16,
-    dst_port: u16,
-    protocol: &'a str,
-    sni: &'a str,
-    ja3: &'a str,
-    ja3s: &'a str,
-    tls_version: &'a str,
-    server_cipher_suite: u16,
-    tls_signature_hash: &'a str,
-    dns_domain: &'a str,
-    http_host: &'a str,
-    http_method: &'a str,
-    http_ua: &'a str,
-    packets_up: u32,
-    packets_down: u32,
-    bytes_up: i64,
-    bytes_down: i64,
-    duration_ms: i64,
-    pkt_size_hist: &'a str,
-    pkt_iat_mean_us: f64,
-    app_id: u32,
-    app_name: &'a str,
-    app_category: &'a str,
-    confidence: f32,
-    src_mac: &'a str,
-    device_manufacturer: &'a str,
-    device_hostname: &'a str,
-    engines: &'a str,
 }

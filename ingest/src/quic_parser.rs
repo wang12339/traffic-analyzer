@@ -20,6 +20,7 @@ const QUIC_V1: u32 = 0x0000_0001;
 
 /// Parsed QUIC Initial metadata.
 #[derive(Debug, Clone, Default)]
+#[allow(dead_code)]
 pub struct QuicInitial {
     pub sni: String,
     pub ja3: String,

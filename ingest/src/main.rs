@@ -189,13 +189,9 @@ async fn main() -> Result<()> {
     info!("Packet processing started");
     while running.load(Ordering::SeqCst) {
         tokio::select! {
-            Some((agent_id, frame)) = pkt_rx.recv() => {
+            Some((_, frame)) = pkt_rx.recv() => {
                 let mut a = agg.lock().await;
-                if let Err(e) = a.process_packet(now_ns(), &frame).await {
-                    if format!("{:#}", e).contains("fatal") {
-                        warn!("Packet processing error from {}: {:#}", agent_id, e);
-                    }
-                }
+                a.process_packet(now_ns(), &frame).await;
             }
             _ = sleep(Duration::from_millis(500)) => {}
         }

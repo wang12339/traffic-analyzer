@@ -11,6 +11,10 @@ CREATE TABLE IF NOT EXISTS traffic.flows (
     protocol        String,
     sni             String,
     ja3             String,
+    ja3s            String,
+    tls_version     String,
+    server_cipher_suite UInt16,
+    tls_signature_hash  String,
     dns_domain      String,
     http_host       String,
     http_method     String,
@@ -28,10 +32,11 @@ CREATE TABLE IF NOT EXISTS traffic.flows (
     confidence      Float32,
     src_mac         String,
     device_manufacturer String,
-    device_hostname String
-) ENGINE = MergeTree
+    device_hostname String,
+    engines         String
+) ENGINE = ReplacingMergeTree(last_seen)
   PARTITION BY toYYYYMM(timestamp)
-  ORDER BY (timestamp, src_ip)
+  ORDER BY (timestamp, src_ip, first_seen)
   TTL toDateTime(timestamp) + INTERVAL 90 DAY;
 
 CREATE TABLE IF NOT EXISTS traffic.flow_stats_daily (

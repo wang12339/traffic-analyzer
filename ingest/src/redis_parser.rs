@@ -4,6 +4,7 @@
 use std::str;
 
 /// Redis command metadata.
+#[allow(dead_code)]
 pub struct RedisCommand {
     pub command: String, // uppercase command name (e.g. "AUTH", "GET", "FLUSHALL")
     pub has_auth: bool,  // whether this is an AUTH command
