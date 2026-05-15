@@ -307,6 +307,19 @@ static RULES: &[Rule] = &[
     Rule(152, "Vivo 系统服务", "System", &["vivo.com.cn", "vivo.com"]),
     // ── Network ──
     Rule(154, "WPAD", "Network", &["wpad"]),
+    // ── Microsoft (general) ──
+    Rule(210, "Microsoft", "Productivity", &["microsoft.com", "windows.com", "msn.com"]),
+    // ── Apple CDN ──
+    Rule(211, "Apple CDN", "System", &["mzstatic.com", "aaplimg.com", "apple-dns.cn", "cdngslb.com"]),
+    // ── npm / Developer ──
+    Rule(212, "npm", "Developer", &["npmjs.org", "npmjs.com"]),
+    // ── 微信／微信支付 ──
+    Rule(213, "微信支付", "Payment", &["wechatpay.com", "wechatpay.cn"]),
+    Rule(214, "腾讯云", "Cloud", &["tencent-cloud.net"]),
+    // ── Misc CDN ──
+    Rule(215, "Cloud CDN", "CDN", &["azureedge.net"]),
+    // ── Network ──
+    Rule(154, "WPAD", "Network", &["wpad"]),
     // ── Analytics ──
     Rule(140, "Comscore", "Analytics", &["scorecardresearch.com"]),
     Rule(
