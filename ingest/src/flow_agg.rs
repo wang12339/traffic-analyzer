@@ -498,6 +498,7 @@ fn ip_from_bytes(bytes: &[u8]) -> IpAddr {
         b.copy_from_slice(bytes);
         IpAddr::V6(Ipv6Addr::from(b))
     } else {
+        tracing::warn!("ip_from_bytes: unexpected byte length {}", bytes.len());
         IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0))
     }
 }
