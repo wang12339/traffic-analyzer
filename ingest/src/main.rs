@@ -149,7 +149,11 @@ async fn main() -> Result<()> {
                             match bincode::deserialize::<Vec<PacketFrame>>(&buf) {
                                 Ok(frames) => {
                                     for f in frames {
-                                        let _ = tx.send((agent_id.clone(), f)).await;
+                                        // Non-blocking send: 丢弃超载帧而非阻塞 agent
+                                        if let Err(e) = tx.try_send((agent_id.clone(), f)) {
+                                            warn!("Ingest channel full, dropping frame: {}", e);
+                                            break; // 停止处理此批，避免更多丢弃
+                                        }
                                     }
                                 }
                                 Err(e) => warn!("Deserialize error from {}: {}", agent_id, e),

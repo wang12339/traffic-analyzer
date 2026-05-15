@@ -300,7 +300,7 @@ impl ClickStore {
             "duration_ms".into(),
             ((ls - fs).max(0) as i64 / 1_000_000).into(),
         );
-        row.insert("pkt_size_hist".into(), "[]".into());
+        row.insert("pkt_size_hist".into(), "[0,0,0,0,0,0,0]".into());
         row.insert("pkt_iat_mean_us".into(), 0.0.into());
         row.insert("app_id".into(), app_id.into());
         row.insert("app_name".into(), app_name.into());

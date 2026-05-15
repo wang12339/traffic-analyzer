@@ -25,7 +25,10 @@ async fn auth_middleware<B: MessageBody + 'static>(
         .app_data::<web::Data<Arc<AppState>>>()
         .map(|d| d.api_key.clone())
         .unwrap_or_default();
-    if api_key.is_empty() || req.path() == "/api/health" {
+    if api_key.is_empty()
+        || req.path() == "/api/health"
+        || req.path().starts_with("/api/docs/")
+    {
         return next.call(req).await;
     }
     let key = req

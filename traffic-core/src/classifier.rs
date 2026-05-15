@@ -856,7 +856,6 @@ pub fn classify_multi(
 
 /// Infer device manufacturer from SNI/DNS + MAC.
 pub fn infer_device(sni: &str, dns: &str, mac: &str) -> String {
-    let combined = format!("{} {}", sni.to_lowercase(), dns.to_lowercase());
     let mac_lower = mac.to_lowercase();
     let mac_pref = if mac.len() >= 8 { &mac_lower[..8] } else { "" };
 
@@ -876,23 +875,32 @@ pub fn infer_device(sni: &str, dns: &str, mac: &str) -> String {
         return "Clash/Stash".into();
     }
 
-    if combined.contains("miui") || combined.contains("micloud") {
-        return "Xiaomi".into();
-    }
-    if combined.contains("apple.com")
-        || combined.contains("icloud.com")
-        || combined.contains("push.apple.com")
-    {
-        return "Apple".into();
-    }
-    if combined.contains("huawei") || combined.contains("hicloud") {
-        return "Huawei".into();
-    }
-    if combined.contains("windowsupdate") || combined.contains("wns.windows") {
-        return "Microsoft Windows".into();
-    }
-    if combined.contains("samsung") {
-        return "Samsung".into();
+    if !sni.is_empty() || !dns.is_empty() {
+        let sni_l = sni.to_lowercase();
+        let dns_l = dns.to_lowercase();
+        if sni_l.contains("miui")
+            || dns_l.contains("miui")
+            || sni_l.contains("micloud")
+            || dns_l.contains("micloud")
+        {
+            return "Xiaomi".into();
+        }
+        if sni_l.contains("apple.com") || dns_l.contains("icloud.com") {
+            return "Apple".into();
+        }
+        if sni_l.contains("huawei") || dns_l.contains("hicloud") {
+            return "Huawei".into();
+        }
+        if sni_l.contains("windowsupdate")
+            || dns_l.contains("windowsupdate")
+            || sni_l.contains("wns.windows")
+            || dns_l.contains("wns.windows")
+        {
+            return "Microsoft Windows".into();
+        }
+        if sni_l.contains("samsung") || dns_l.contains("samsung") {
+            return "Samsung".into();
+        }
     }
 
     String::new()

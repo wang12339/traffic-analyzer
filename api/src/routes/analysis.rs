@@ -45,7 +45,7 @@ pub struct DestInfo {
 pub async fn get_live(state: web::Data<Arc<AppState>>) -> HttpResponse {
     let sql = format!(
         "SELECT src_ip,sni,dns_domain,app_name,sum(bytes_up+bytes_down) as b,any(src_mac) as m \
-         FROM {}.flows WHERE timestamp>=now()-toIntervalMinute(5) AND (src_ip LIKE '192.168.%' OR src_ip LIKE '10.%' OR src_ip LIKE '172.1%' OR src_ip LIKE '172.2%' OR src_ip LIKE '172.3%')
+         FROM {}.flows WHERE timestamp>=now()-toIntervalMinute(5) AND (src_ip LIKE '192.168.%' OR src_ip LIKE '10.%' OR (ipv4StringToNum(src_ip) BETWEEN ipv4StringToNum('172.16.0.0') AND ipv4StringToNum('172.31.255.255')))
          GROUP BY src_ip,sni,dns_domain,app_name ORDER BY src_ip", state.database);
     let rows = match ch_query::<serde_json::Value>(&state, &sql).await {
         Ok(r) => r,

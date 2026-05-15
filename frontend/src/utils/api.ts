@@ -91,11 +91,14 @@ export class ApiError extends Error {
 
 async function fetchApi<T>(path: string, options?: RequestInit): Promise<T> {
   const url = `${API_BASE}${path}`;
+  const apiKey = sessionStorage.getItem('api_key');
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (apiKey) headers['X-API-Key'] = apiKey;
   let resp: Response;
   try {
     resp = await fetch(url, {
       ...options,
-      headers: { 'Content-Type': 'application/json', ...options?.headers },
+      headers: { ...headers, ...options?.headers as Record<string, string> | undefined },
     });
   } catch (err) {
     throw new ApiError(0, `Network error: ${err instanceof Error ? err.message : String(err)}`);
