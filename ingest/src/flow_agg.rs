@@ -308,8 +308,11 @@ impl FlowAggregator {
             }
         }
 
-        // Classify when we have enough info (after L7 extraction)
-        if state.classification.is_none() {
+        // Classify/re-classify when we have enough info (after L7 extraction)
+        // Re-classify when SNI/DNS arrives after initial port-fallback classification
+        let has_better_data = state.sni.is_some() || state.dns_domain.is_some();
+        let is_port_only = state.classification.as_ref().map(|c| c.confidence <= 0.6).unwrap_or(true);
+        if state.classification.is_none() || (has_better_data && is_port_only) {
             let sni = state.sni.as_deref().unwrap_or("");
             let dns = state.dns_domain.as_deref().unwrap_or("");
             let app = classifier::classify(sni, dns, key.dst_port);
