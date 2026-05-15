@@ -21,6 +21,10 @@ export interface FlowRecord {
   dst_port: number;
   protocol: string;
   sni: string;
+  ja3s: string;
+  tls_version: string;
+  server_cipher_suite: number;
+  tls_signature_hash: string;
   dns_domain: string;
   app_name: string;
   app_category: string;
@@ -31,6 +35,7 @@ export interface FlowRecord {
   packets_down: number;
   duration_ms: number;
   src_mac: string;
+  engines: string;
 }
 
 export interface DeviceRecord {

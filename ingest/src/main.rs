@@ -1,8 +1,9 @@
-mod classifier;
 mod dns_parser;
 mod flow_agg;
 mod http_parser;
+mod mysql_parser;
 mod quic_parser;
+mod redis_parser;
 mod storage;
 mod tcp_reasm;
 mod tls_parser;

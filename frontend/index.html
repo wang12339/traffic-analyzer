@@ -7,32 +7,59 @@
     <title>流量分析系统</title>
     <style>
       * { margin: 0; padding: 0; box-sizing: border-box; }
-      body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0f0f13; color: #e0e0e0; }
-      :root { --bg-primary: #0f0f13; --bg-card: #1a1a24; --bg-hover: #252535; --accent: #6366f1; --accent-dim: #4f46e5; --text-primary: #e0e0e0; --text-secondary: #8888a0; --border: #2a2a3a; --success: #22c55e; --warning: #f59e0b; --danger: #ef4444; }
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        background: #070a1e;
+        color: #e0e8ff;
+        overflow: hidden;
+      }
+      :root {
+        --bg-primary: #070a1e;
+        --bg-card: #131842;
+        --bg-hover: #1a2450;
+        --accent: #6366f1;
+        --accent-dim: #4f46e5;
+        --text-primary: #e0e8ff;
+        --text-secondary: #8892c0;
+        --border: #1e3a8a;
+        --success: #22c55e;
+        --warning: #f59e0b;
+        --danger: #ef4444;
+      }
+      /* Scan line effect */
+      body::after {
+        content: '';
+        position: fixed;
+        top: 0; left: 0; right: 0; bottom: 0;
+        background: repeating-linear-gradient(
+          0deg,
+          transparent,
+          transparent 2px,
+          rgba(99, 102, 241, 0.015) 2px,
+          rgba(99, 102, 241, 0.015) 4px
+        );
+        pointer-events: none;
+        z-index: 9999;
+      }
+      /* Custom scrollbar */
+      ::-webkit-scrollbar { width: 6px; height: 6px; }
+      ::-webkit-scrollbar-track { background: transparent; }
+      ::-webkit-scrollbar-thumb { background: #1e3a8a; border-radius: 3px; }
+      ::-webkit-scrollbar-thumb:hover { background: #2a4a9a; }
+      /* Ant Design overrides */
+      .ant-layout { min-height: 100vh; }
+      .ant-layout-sider { border-right: 1px solid rgba(30, 58, 138, 0.3); }
+      .ant-card { border: 1px solid rgba(30, 58, 138, 0.3) !important; backdrop-filter: blur(4px); }
+      .ant-card-small > .ant-card-head { border-bottom: 1px solid rgba(30, 58, 138, 0.2); }
+      .ant-table-wrapper .ant-table-thead > tr > th { border-bottom: 1px solid rgba(30, 58, 138, 0.2); }
+      .ant-table-wrapper .ant-table-tbody > tr > td { border-bottom: 1px solid rgba(30, 58, 138, 0.1); }
+      /* Glow effects */
+      .ant-statistic-title { color: #8892c0 !important; font-size: 12px !important; }
+      .ant-statistic-content { text-shadow: 0 0 20px rgba(99, 102, 241, 0.15); }
       @media (max-width: 768px) {
-        body { font-size: 14px; padding: 0 !important; }
-        h1 { font-size: 18px !important; }
-        h3 { font-size: 13px !important; }
-        table, td, th { font-size: 11px !important; padding: 4px 6px !important; }
-        input, select, button { font-size: 13px !important; }
-        div[style*="grid-template-columns"] {
-          grid-template-columns: 1fr 1fr !important;
-          gap: 8px !important;
-        }
-        div[style*="1400"] {
-          padding: 12px !important;
-          max-width: 100% !important;
-        }
-        div[style*="display:flex"][style*="justify-content: space-between"] {
-          flex-wrap: wrap !important;
-          gap: 4px !important;
-        }
-        div[style*="overflow-x: auto"] {
-          -webkit-overflow-scrolling: touch !important;
-        }
-        nav { overflow-x: auto; white-space: nowrap; -webkit-overflow-scrolling: touch; }
-        nav button { font-size: 12px !important; padding: 8px 12px !important; }
-        pre { font-size: 10px !important; }
+        body { font-size: 14px; }
+        .ant-layout-content { padding: 12px !important; }
+        .ant-statistic-content { font-size: 16px !important; }
       }
     </style>
   </head>

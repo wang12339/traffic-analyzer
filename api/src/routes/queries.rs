@@ -78,8 +78,10 @@ pub async fn get_flows(state: web::Data<Arc<AppState>>, q: web::Query<FlowQuery>
     }
     let sql = format!(
         "SELECT timestamp,src_ip,dst_ip,src_port,dst_port,protocol,\
-        sni,dns_domain,app_name,app_category,confidence,\
-        bytes_up,bytes_down,packets_up,packets_down,duration_ms,src_mac \
+        sni,ja3s,tls_version,server_cipher_suite,tls_signature_hash,\
+        dns_domain,app_name,app_category,confidence,\
+        bytes_up,bytes_down,packets_up,packets_down,duration_ms,src_mac,\
+        engines \
         FROM {}.flows WHERE {} ORDER BY timestamp DESC LIMIT {}",
         state.database, cond, limit
     );

@@ -8,11 +8,15 @@ use std::sync::Arc;
 
 use crate::dns_parser;
 use crate::http_parser;
+use crate::mysql_parser;
+use crate::redis_parser;
 use crate::storage::ClickStore;
 use crate::tcp_reasm::TcpReassembler;
 use chrono::DateTime;
 use tracing::{debug, info};
-use traffic_core::{Classification, FlowKey, FlowRecord, PacketFrame, classifier};
+use traffic_core::{
+    Classification, FlowFeatures, FlowKey, FlowRecord, MultiClassification, PacketFrame, classifier,
+};
 
 /// Per-flow state maintained during aggregation.
 #[derive(Debug)]
@@ -36,6 +40,8 @@ struct FlowState {
     ja3: Option<String>,
     ja3s: Option<String>,
     tls_version: Option<String>,
+    tls_signature_hash: Option<String>, // compact TLS fingerprint
+    server_cipher_suite: Option<u16>,   // cipher suite selected by server
     dns_domain: Option<String>,
     http_host: Option<String>,
     http_method: Option<String>,
@@ -43,6 +49,9 @@ struct FlowState {
 
     // Classification result
     classification: Option<Classification>,
+
+    // Multi-engine verdicts (JSON array, from classify_multi)
+    engines: Option<String>,
 
     // Device info (populated from agent)
     src_mac: Option<String>,
@@ -70,11 +79,14 @@ impl FlowState {
             ja3: None,
             ja3s: None,
             tls_version: None,
+            tls_signature_hash: None,
+            server_cipher_suite: None,
             dns_domain: None,
             http_host: None,
             http_method: None,
             http_ua: None,
             classification: None,
+            engines: None,
             src_mac: None,
             device_hostname: None,
             finalized: false,
@@ -151,6 +163,10 @@ impl FlowState {
             },
             sni: self.sni.clone().unwrap_or_default(),
             ja3: self.ja3.clone().unwrap_or_default(),
+            ja3s: self.ja3s.clone().unwrap_or_default(),
+            tls_version: self.tls_version.clone().unwrap_or_default(),
+            server_cipher_suite: self.server_cipher_suite.unwrap_or(0),
+            tls_signature_hash: self.tls_signature_hash.clone().unwrap_or_default(),
             dns_domain: self.dns_domain.clone().unwrap_or_default(),
             http_host: self.http_host.clone().unwrap_or_default(),
             http_method: self.http_method.clone().unwrap_or_default(),
@@ -169,6 +185,7 @@ impl FlowState {
             src_mac: self.src_mac.clone().unwrap_or_default(),
             device_manufacturer: String::new(),
             device_hostname: self.device_hostname.clone().unwrap_or_default(),
+            engines: self.engines.clone().unwrap_or_default(),
         }
     }
 }
@@ -251,6 +268,9 @@ impl FlowAggregator {
                     if !ch.ja3.is_empty() {
                         state.ja3 = Some(ch.ja3.clone());
                     }
+                    if !ch.tls_signature.is_empty() {
+                        state.tls_signature_hash = Some(ch.tls_signature.clone());
+                    }
                     if sh.tls_version != 0 {
                         state.tls_version = Some(format!(
                             "TLSv1.{}",
@@ -263,6 +283,7 @@ impl FlowAggregator {
                             }
                         ));
                         state.ja3s = Some(sh.ja3s.clone());
+                        state.server_cipher_suite = Some(sh.cipher_suite);
                     }
                 }
 
@@ -284,6 +305,44 @@ impl FlowAggregator {
                         if let Some(host) = http_parser::parse_connect_request(&frame.payload) {
                             state.sni = Some(host);
                         }
+                    }
+                }
+
+                // MySQL protocol parsing (port 3306)
+                if frame.dst_port == 3306 && !frame.payload.is_empty() {
+                    if let Some(hs) = mysql_parser::parse_handshake(&frame.payload) {
+                        let meta = format!("mysql:{}/{}", hs.server_version, hs.auth_plugin);
+                        state.http_host = Some(meta);
+                    }
+                    if is_client_side {
+                        if let Some(cmd) = mysql_parser::parse_command(&frame.payload) {
+                            if cmd.dangerous {
+                                tracing::warn!(
+                                    "Dangerous MySQL command detected: {} -> {}",
+                                    key.src_ip,
+                                    cmd.query_summary
+                                );
+                            }
+                        }
+                    }
+                }
+
+                // Redis protocol parsing (port 6379)
+                if (frame.dst_port == 6379 || frame.src_port == 6379) && !frame.payload.is_empty() {
+                    if let Some(r) = redis_parser::parse_command(&frame.payload) {
+                        let mut meta = format!("redis:{}", r.command);
+                        if let Some(db) = r.db_index {
+                            meta.push_str(&format!(" db={}", db));
+                        }
+                        if r.dangerous {
+                            meta.push_str(" ⚠️");
+                            tracing::warn!(
+                                "Dangerous Redis command: {} from {}",
+                                r.command,
+                                key.src_ip
+                            );
+                        }
+                        state.http_ua = Some(meta);
                     }
                 }
             }
@@ -308,16 +367,38 @@ impl FlowAggregator {
             }
         }
 
-        // Classify/re-classify when we have enough info (after L7 extraction)
-        // Re-classify when SNI/DNS arrives after initial port-fallback classification
+        // Classify/re-classify: multi-engine with all available data
         let has_better_data = state.sni.is_some() || state.dns_domain.is_some();
-        let is_port_only = state.classification.as_ref().map(|c| c.confidence <= 0.6).unwrap_or(true);
+        let is_port_only = state
+            .classification
+            .as_ref()
+            .map(|c| c.confidence <= 0.6)
+            .unwrap_or(true);
         if state.classification.is_none() || (has_better_data && is_port_only) {
             let sni = state.sni.as_deref().unwrap_or("");
             let dns = state.dns_domain.as_deref().unwrap_or("");
-            let app = classifier::classify(sni, dns, key.dst_port);
-            if app.confidence > 0.3 {
-                state.classification = Some(app);
+            let ja3 = state.ja3.as_deref().unwrap_or("");
+            let features = classifier::FlowFeatures {
+                bytes_up: state.bytes_up as f64,
+                bytes_down: state.bytes_down as f64,
+                packets_up: state.packets_up,
+                packets_down: state.packets_down,
+                duration_ms: ((state.last_seen_ns.saturating_sub(state.first_seen_ns)) / 1_000_000)
+                    as i64,
+                pkt_iat_mean_us: if state.iat_count > 0 {
+                    state.iat_sum_us / state.iat_count as f64
+                } else {
+                    0.0
+                },
+            };
+
+            let multi = classifier::classify_multi(sni, dns, ja3, key.dst_port, Some(&features));
+            if multi.primary.confidence > 0.3 {
+                state.classification = Some(multi.primary);
+            }
+            // 序列化引擎判定结果
+            if !multi.engines.is_empty() {
+                state.engines = Some(serde_json::to_string(&multi.engines).unwrap_or_default());
             }
         }
 

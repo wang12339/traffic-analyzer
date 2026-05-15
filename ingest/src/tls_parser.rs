@@ -24,6 +24,8 @@ pub struct TlsClientHello {
     pub extensions: Vec<u16>,
     pub supported_groups: Vec<u16>,
     pub ec_point_formats: Vec<u8>,
+    /// Compact TLS implementation signature: "version-cs_count-ext_count-first_group"
+    pub tls_signature: String,
 }
 
 /// Parse a TLS ClientHello from a TCP payload buffer.
@@ -92,6 +94,7 @@ pub fn parse_client_hello(buf: &[u8]) -> Option<TlsClientHello> {
     if pos + 2 > ch.len() {
         // No extensions — still valid, no SNI
         let ja3 = compute_ja3(&tls_version, &cipher_suites, &[], &[], &[]);
+        let tls_sig = compute_tls_signature(tls_version, &cipher_suites, &[], &[]);
         return Some(TlsClientHello {
             sni: String::new(),
             ja3,
@@ -100,6 +103,7 @@ pub fn parse_client_hello(buf: &[u8]) -> Option<TlsClientHello> {
             extensions: vec![],
             supported_groups: vec![],
             ec_point_formats: vec![],
+            tls_signature: tls_sig,
         });
     }
 
@@ -164,6 +168,8 @@ pub fn parse_client_hello(buf: &[u8]) -> Option<TlsClientHello> {
         &supported_groups,
         &ec_point_formats,
     );
+    let tls_sig =
+        compute_tls_signature(tls_version, &cipher_suites, &extensions, &supported_groups);
 
     Some(TlsClientHello {
         sni,
@@ -173,7 +179,26 @@ pub fn parse_client_hello(buf: &[u8]) -> Option<TlsClientHello> {
         extensions,
         supported_groups,
         ec_point_formats,
+        tls_signature: tls_sig,
     })
+}
+
+/// Compact TLS implementation signature for mutation detection.
+/// Format: "{version}-{cs_count}-{ext_count}-{first_group}"
+/// e.g. "771-17-10-29" = TLS 1.2, 17 cipher suites, 10 extensions, x25519
+fn compute_tls_signature(
+    version: u16,
+    ciphers: &[u16],
+    extensions: &[u16],
+    groups: &[u16],
+) -> String {
+    format!(
+        "{}-{}-{}-{}",
+        version,
+        ciphers.len().min(99),
+        extensions.len().min(99),
+        groups.first().copied().unwrap_or(0)
+    )
 }
 
 fn compute_ja3(

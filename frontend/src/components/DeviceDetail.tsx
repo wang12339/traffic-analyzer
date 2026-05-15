@@ -8,6 +8,7 @@ export function DeviceDetail({ ip, onBack }: { ip: string; onBack: () => void })
   const [anomalies, setAnomalies] = useState<any>(null);
   const [trends, setTrends] = useState<any[]>([]);
   const [appBreakdown, setAppBreakdown] = useState<any[]>([]);
+  const [tlsFingerprints, setTlsFingerprints] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -18,7 +19,8 @@ export function DeviceDetail({ ip, onBack }: { ip: string; onBack: () => void })
       fetch(`/api/device/${ip}/anomalies`).then(r=>r.json()),
       fetch(`/api/device/${ip}`).then(r=>r.json()),
       fetch(`/api/device/${ip}/trends?since=2h`).then(r=>r.json()),
-    ]).then(([ins, cur, anm, det, trd]) => {
+      fetch(`/api/device/${ip}/tls-fingerprints`).then(r=>r.json()),
+    ]).then(([ins, cur, anm, det, trd, tls]) => {
       if (ins.success) {
         const dev = ins.data.devices?.find((d: any) => d.ip === ip);
         if (dev) setProfile(dev);
@@ -43,6 +45,7 @@ export function DeviceDetail({ ip, onBack }: { ip: string; onBack: () => void })
         }
         setAppBreakdown(Object.entries(appMap).map(([k,v]) => ({name:k, ...v})).sort((a,b)=>b.bytes-a.bytes));
       }
+      if (tls.success) setTlsFingerprints(tls.data);
       setLoading(false);
     }).catch(() => setLoading(false));
   }, [ip]);
@@ -151,6 +154,71 @@ export function DeviceDetail({ ip, onBack }: { ip: string; onBack: () => void })
           </div>
         </div>
       </div>
+
+      {/* Engine Comparison Panel */}
+      {current.length > 0 && current[0].engines && (() => {
+        let engines: any[] = [];
+        try { engines = JSON.parse(current[0].engines); } catch {}
+        return engines.length > 0 ? (
+          <div style={{background:'var(--bg-card)', borderRadius:12, border:'1px solid var(--border)', padding:16, marginBottom:16}}>
+            <h3 style={{fontSize:14, fontWeight:600, marginBottom:10}}>🔍 应用分类来源</h3>
+            <div style={{display:'flex', flexDirection:'column', gap:4}}>
+              {engines.map((e: any, i: number) => (
+                <div key={i} style={{display:'flex', alignItems:'center', gap:8, padding:'6px 8px', fontSize:13, borderBottom:'1px solid var(--border)'}}>
+                  <span style={{fontSize:11, background:'var(--bg-hover)', padding:'2px 6px', borderRadius:4, minWidth:50, textAlign:'center', fontWeight:600}}>
+                    {e.engine === 'rules' ? '📋 规则' : e.engine === 'ja3' ? '🔒 JA3' : e.engine === 'flow' ? '📊 流量' : e.engine}
+                  </span>
+                  <span style={{flex:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>
+                    {e.app_name}
+                    {e.app_category !== 'Unknown' && <span style={{color:'var(--text-secondary)', fontSize:11, marginLeft:6}}>({e.app_category})</span>}
+                  </span>
+                  <span style={{color:'var(--text-secondary)', fontSize:12, minWidth:40, textAlign:'right'}}>
+                    {(e.confidence * 100).toFixed(0)}%
+                  </span>
+                  <span style={{color:'var(--text-secondary)', fontSize:10, maxWidth:200, textAlign:'right', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>
+                    {e.detail?.split(' → ').pop() || ''}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null;
+      })()}
+
+      {/* TLS Security Panel */}
+      {tlsFingerprints && (
+        <div style={{background:'var(--bg-card)', borderRadius:12, border:'1px solid var(--border)', padding:16, marginBottom:16}}>
+          <h3 style={{fontSize:14, fontWeight:600, marginBottom:10}}>🔐 TLS 连接分析</h3>
+          <div style={{marginBottom:10}}>
+            <span style={{fontSize:13}}>过去24h出现 <strong>{tlsFingerprints.distinct_signatures || 0}</strong> 种不同 TLS 实现</span>
+            {(tlsFingerprints.distinct_signatures || 0) > 3 && (
+              <span style={{marginLeft:8, fontSize:11, color:'var(--warning)'}}>⚠️ 偏高</span>
+            )}
+          </div>
+          {tlsFingerprints.fingerprints?.length > 0 && (
+            <div>
+              {tlsFingerprints.fingerprints.map((fp: any, i: number) => {
+                const maxCnt = tlsFingerprints.fingerprints[0]?.cnt || 1;
+                const pct = (fp.cnt / maxCnt * 100).toFixed(0);
+                return (
+                  <div key={i} style={{display:'flex', alignItems:'center', gap:8, padding:'4px 0', fontSize:12, borderBottom:'1px solid var(--border)'}}>
+                    <span style={{minWidth:70, fontSize:11, color:'var(--text-secondary)'}}>
+                      {fp.tls_version || 'TLS?'}
+                    </span>
+                    <div style={{flex:1, height:16, background:'var(--bg-hover)', borderRadius:8, overflow:'hidden'}}>
+                      <div style={{height:'100%', width:`${pct}%`, background: fp.cnt > maxCnt * 0.3 ? 'var(--accent)' : 'var(--warning)', borderRadius:8, opacity:0.7}} />
+                    </div>
+                    <span style={{minWidth:40, textAlign:'right', fontWeight:600}}>{fp.cnt}次</span>
+                    <span style={{fontSize:10, color:'var(--text-secondary)', maxWidth:200, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>
+                      {fp.tls_signature_hash?.substring(0, 16) || ''}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

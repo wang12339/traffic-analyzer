@@ -86,6 +86,10 @@ async fn main() -> anyhow::Result<()> {
                 "/api/device/{ip}/trends",
                 web::get().to(analysis::get_device_trends),
             )
+            .route(
+                "/api/device/{ip}/tls-fingerprints",
+                web::get().to(analysis::get_device_tls_fingerprints),
+            )
             .route("/api/insights", web::get().to(analysis::get_insights))
             .route(
                 "/api/analysis/wechat",
@@ -95,6 +99,8 @@ async fn main() -> anyhow::Result<()> {
             .route("/api/topology", web::get().to(analysis::get_topology))
             .route("/api/timeline", web::get().to(analysis::get_timeline))
             .route("/api/alerts", web::get().to(analysis::get_alerts))
+            // Geo IP lookup
+            .route("/api/geo-lookup", web::get().to(geo::geo_lookup))
             // Agent management
             .route("/api/agent/status", web::get().to(agent::agent_status))
             .route("/api/agent/start", web::post().to(agent::agent_start))

@@ -19,6 +19,10 @@ pub struct FlowRow {
     pub protocol: String,
     pub sni: String,
     pub ja3: String,
+    pub ja3s: String,
+    pub tls_version: String,
+    pub server_cipher_suite: u16,
+    pub tls_signature_hash: String,
     pub dns_domain: String,
     pub http_host: String,
     pub http_method: String,
@@ -37,6 +41,7 @@ pub struct FlowRow {
     pub src_mac: String,
     pub device_manufacturer: String,
     pub device_hostname: String,
+    pub engines: String,
 }
 
 pub struct ClickStore {
@@ -74,6 +79,10 @@ impl ClickStore {
                 protocol        String,
                 sni             String,
                 ja3             String,
+                ja3s            String,
+                tls_version     String,
+                server_cipher_suite UInt16,
+                tls_signature_hash  String,
                 dns_domain      String,
                 http_host       String,
                 http_method     String,
@@ -91,7 +100,8 @@ impl ClickStore {
                 confidence      Float32,
                 src_mac         String,
                 device_manufacturer String,
-                device_hostname String
+                device_hostname String,
+                engines         String
             ) ENGINE = MergeTree
             PARTITION BY toYYYYMM(timestamp)
             ORDER BY (timestamp, src_ip)
@@ -178,7 +188,10 @@ impl ClickStore {
                 "src_port": r.src_port,
                 "dst_port": r.dst_port,
                 "protocol": r.protocol,
-                "sni": r.sni, "ja3": r.ja3, "dns_domain": r.dns_domain,
+                "sni": r.sni, "ja3": r.ja3, "ja3s": r.ja3s, "tls_version": r.tls_version,
+                "server_cipher_suite": r.server_cipher_suite,
+                "tls_signature_hash": r.tls_signature_hash,
+                "dns_domain": r.dns_domain,
                 "http_host": r.http_host, "http_method": r.http_method, "http_ua": r.http_ua,
                 "packets_up": r.packets_up, "packets_down": r.packets_down,
                 "bytes_up": r.bytes_up, "bytes_down": r.bytes_down,
@@ -189,6 +202,7 @@ impl ClickStore {
                 "confidence": r.confidence,
                 "src_mac": r.src_mac, "device_manufacturer": r.device_manufacturer,
                 "device_hostname": r.device_hostname,
+                "engines": r.engines,
             }));
         }
         let body = json_rows
@@ -292,6 +306,10 @@ impl ClickStore {
             rec["http_host"].as_str().unwrap_or("").into(),
         );
         row.insert("ja3".into(), "".into());
+        row.insert("ja3s".into(), "".into());
+        row.insert("tls_version".into(), "".into());
+        row.insert("server_cipher_suite".into(), 0.into());
+        row.insert("tls_signature_hash".into(), "".into());
         row.insert(
             "dns_domain".into(),
             rec["dns_domain"].as_str().unwrap_or("").into(),
@@ -334,6 +352,7 @@ impl ClickStore {
             "device_hostname".into(),
             rec["hostname"].as_str().unwrap_or("").into(),
         );
+        row.insert("engines".into(), "".into());
 
         let body = serde_json::to_string(&row)?;
         let query = format!("INSERT INTO {}.flows FORMAT JSONEachRow", &self.database);
@@ -452,6 +471,10 @@ struct FlowRowCompat<'a> {
     protocol: &'a str,
     sni: &'a str,
     ja3: &'a str,
+    ja3s: &'a str,
+    tls_version: &'a str,
+    server_cipher_suite: u16,
+    tls_signature_hash: &'a str,
     dns_domain: &'a str,
     http_host: &'a str,
     http_method: &'a str,
@@ -470,4 +493,5 @@ struct FlowRowCompat<'a> {
     src_mac: &'a str,
     device_manufacturer: &'a str,
     device_hostname: &'a str,
+    engines: &'a str,
 }

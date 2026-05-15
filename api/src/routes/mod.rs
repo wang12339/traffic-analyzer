@@ -1,6 +1,7 @@
 pub mod agent;
 pub mod analysis;
 pub mod doc;
+pub mod geo;
 pub mod queries;
 
 use actix_web::HttpResponse;
@@ -165,6 +166,10 @@ pub struct FlowRow {
     pub dst_port: u16,
     pub protocol: String,
     pub sni: String,
+    pub ja3s: String,
+    pub tls_version: String,
+    pub server_cipher_suite: u16,
+    pub tls_signature_hash: String,
     pub dns_domain: String,
     pub app_name: String,
     pub app_category: String,
@@ -175,6 +180,7 @@ pub struct FlowRow {
     pub packets_down: u32,
     pub duration_ms: i64,
     pub src_mac: String,
+    pub engines: String,
 }
 #[derive(Deserialize, Serialize, ToSchema)]
 pub struct AppRow {

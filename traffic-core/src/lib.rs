@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::net::IpAddr;
 
 pub mod classifier;
-pub use classifier::Classification;
+pub use classifier::{Classification, EngineVerdict, FlowFeatures, MultiClassification};
 
 pub type Port = u16;
 pub type Protocol = u8;
@@ -90,6 +90,10 @@ pub struct FlowRecord {
     // L7 metadata
     pub sni: String,
     pub ja3: String,
+    pub ja3s: String,
+    pub tls_version: String,
+    pub server_cipher_suite: u16,
+    pub tls_signature_hash: String,
     pub dns_domain: String,
     pub http_host: String,
     pub http_method: String,
@@ -116,6 +120,9 @@ pub struct FlowRecord {
     pub src_mac: String,
     pub device_manufacturer: String,
     pub device_hostname: String,
+
+    // Multi-engine classification verdicts (JSON array)
+    pub engines: String,
 }
 
 /// Device information sent by the agent.

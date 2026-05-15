@@ -225,6 +225,51 @@ pub async fn get_device_trends(
     }
 }
 
+/// TLS fingerprint diversity for a device — detects TLS implementation changes.
+#[utoipa::path(
+    get,
+    path = "/api/device/{ip}/tls-fingerprints",
+    params(
+        ("ip" = String, Path, description = "Device IP address"),
+    ),
+    responses(
+        (status = 200, description = "TLS fingerprint distribution"),
+    ),
+    tag = "Devices"
+)]
+pub async fn get_device_tls_fingerprints(
+    state: web::Data<Arc<AppState>>,
+    path: web::Path<String>,
+) -> HttpResponse {
+    let ip = path.into_inner();
+    let sql = format!(
+        "SELECT tls_signature_hash,ja3,ja3s,tls_version,count() as cnt \
+         FROM {}.flows WHERE src_ip='{}' AND tls_signature_hash!='' \
+         AND timestamp>=now()-toIntervalDay(1) \
+         GROUP BY tls_signature_hash,ja3,ja3s,tls_version \
+         ORDER BY cnt DESC LIMIT 20",
+        state.database,
+        ip.replace('\'', "\\'"),
+    );
+    let count_sql = format!(
+        "SELECT countDistinct(tls_signature_hash) as distinct_sigs \
+         FROM {}.flows WHERE src_ip='{}' AND tls_signature_hash!='' \
+         AND timestamp>=now()-toIntervalDay(1)",
+        state.database,
+        ip.replace('\'', "\\'"),
+    );
+    match tokio::join!(
+        ch_query::<serde_json::Value>(&state, &sql),
+        ch_one::<serde_json::Value>(&state, &count_sql),
+    ) {
+        (Ok(rows), Ok(count)) => HttpResponse::Ok().json(ApiResponse::ok(serde_json::json!({
+            "distinct_signatures": count["distinct_sigs"],
+            "fingerprints": rows,
+        }))),
+        (Err(e), _) | (_, Err(e)) => HttpResponse::InternalServerError().json(api_err(&e)),
+    }
+}
+
 #[utoipa::path(
     get,
     path = "/api/device/{ip}",

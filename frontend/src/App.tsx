@@ -1,69 +1,202 @@
 import React, { useState } from 'react';
+import { ConfigProvider, Layout, Menu, Typography, Select, Tag } from 'antd';
+import {
+  DashboardOutlined, RadarChartOutlined, AppstoreOutlined,
+  WechatOutlined, LinkOutlined, ApartmentOutlined,
+  BellOutlined, SettingOutlined, ClockCircleOutlined,
+  GlobalOutlined, MenuFoldOutlined, MenuUnfoldOutlined,
+  SafetyOutlined,
+} from '@ant-design/icons';
+import { cyberpunkDark } from './theme';
 import { useApi } from './hooks/useApi';
 import { getStats } from './utils/api';
-import type { Stats } from './utils/api';
+
+// Pages
+import { DashboardPage } from './components/DashboardPage';
 import { InsightsBoard } from './components/InsightsBoard';
+import { OverviewFull } from './components/OverviewFull';
 import { AppView } from './components/AppView';
 import { DeviceDetail } from './components/DeviceDetail';
 import { HttpView } from './components/HttpView';
 import { AdminPanel } from './components/AdminPanel';
 import { TopologyView } from './components/TopologyView';
 import { AlertsView } from './components/AlertsView';
-import { TimelineView } from "./components/TimelineView";
-import { OverviewFull } from "./components/OverviewFull";
+import { TimelineView } from './components/TimelineView';
+import { GeoMapPage } from './components/GeoMapPage';
 import { WeChatAnalysis } from './components/WeChatAnalysis';
 
+const { Header, Sider, Content } = Layout;
+const { Text } = Typography;
+
+type TabKey = 'dashboard' | 'insights' | 'overview' | 'apps' | 'wechat' | 'http' | 'topo' | 'alerts' | 'timeline' | 'geo' | 'admin';
+
+const menuItems = [
+  { key: 'dashboard', icon: <DashboardOutlined />, label: '仪表盘' },
+  { key: 'insights', icon: <RadarChartOutlined />, label: '洞察' },
+  { key: 'overview', icon: <SafetyOutlined />, label: '全景' },
+  { key: 'timeline', icon: <ClockCircleOutlined />, label: '时间线' },
+  { key: 'apps', icon: <AppstoreOutlined />, label: '应用' },
+  { key: 'wechat', icon: <WechatOutlined />, label: '微信' },
+  { key: 'geo', icon: <GlobalOutlined />, label: '地图' },
+  { key: 'http', icon: <LinkOutlined />, label: 'HTTP' },
+  { key: 'topo', icon: <ApartmentOutlined />, label: '拓扑' },
+  { key: 'alerts', icon: <BellOutlined />, label: '告警' },
+  { key: 'admin', icon: <SettingOutlined />, label: '管理' },
+];
+
 export default function App() {
-  const [tab, setTab] = useState('insights');
+  const [tab, setTab] = useState<TabKey>('dashboard');
   const [since, setSince] = useState('30m');
-  const [detailIp, setDetailIp] = useState<string|null>(null);
+  const [collapsed, setCollapsed] = useState(false);
+  const [detailIp, setDetailIp] = useState<string | null>(null);
   const stats = useApi(() => getStats(since), [since], { interval: 8000 });
+
   const handleDeviceClick = (ip: string) => setDetailIp(ip);
-  if (detailIp) {
-    return (
-      <div style={{maxWidth:1400, margin:'0 auto', padding:'20px 24px'}}>
-        <DeviceDetail ip={detailIp} onBack={() => setDetailIp(null)} />
-      </div>
-    );
-  }
+
+  // If viewing device detail, show it within the layout
+  const renderContent = () => {
+    if (detailIp) {
+      return <DeviceDetail ip={detailIp} onBack={() => setDetailIp(null)} />;
+    }
+    switch (tab) {
+      case 'dashboard': return <DashboardPage />;
+      case 'insights': return <InsightsBoard onDeviceClick={handleDeviceClick} />;
+      case 'overview': return <OverviewFull />;
+      case 'apps': return <AppView since={since} />;
+      case 'wechat': return <WeChatAnalysis />;
+      case 'http': return <HttpView />;
+      case 'topo': return <TopologyView />;
+      case 'alerts': return <AlertsView />;
+      case 'timeline': return <TimelineView />;
+      case 'geo': return <GeoMapPage />;
+      case 'admin': return <AdminPanel />;
+      default: return <DashboardPage />;
+    }
+  };
+
+  const statusColor = stats.error ? 'red' : stats.data ? 'green' : 'yellow';
+  const statusText = stats.error ? '连接异常' : stats.data ? '运行中' : '连接中...';
+
   return (
-    <div style={{maxWidth:1400, margin:'0 auto', padding:'20px 24px'}}>
-      <header style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:20}}>
-        <div>
-          <h1 style={{fontSize:22, fontWeight:700, letterSpacing:-0.3}}>流量分析系统</h1>
-          <p style={{fontSize:13, color:'var(--text-secondary)', marginTop:2}}>
-            {stats.data ? `${stats.data.total_flows}条流 · ${stats.data.unique_devices}台设备 · ${stats.data.flows_per_sec.toFixed(1)}流/秒` : '加载中...'}
-          </p>
-        </div>
-        <select value={since} onChange={e=>setSince(e.target.value)} style={{background:'var(--bg-card)', border:'1px solid var(--border)', borderRadius:8, padding:'8px 12px', color:'var(--text-primary)', fontSize:13}}>
-          <option value="15m">15分钟</option><option value="30m">30分钟</option><option value="1h">1小时</option>
-        </select>
-      </header>
-      <div style={{display:'flex', gap:4, marginBottom:20, borderBottom:'1px solid var(--border)'}}>
-        {[
-          {k:'insights', l:'📊 洞察'},
-          {k:'overview', l:'📈 全景'},
-          {k:'timeline', l:'⏱ 时间线'},
-          {k:'apps', l:'📱 应用'},
-          {k:'wechat', l:'💬 微信'},
-          {k:'http', l:'🔓 HTTP'},
-          {k:'topo', l:'🗺️ 拓扑'},
-          {k:'alerts', l:'🚨 告警'},
-          {k:'admin', l:'⚙️ 管理'},
-        ].map(t => (
-          <button key={t.k} onClick={()=>setTab(t.k)}
-            style={{padding:'10px 20px', fontSize:14, fontWeight:500, background:tab===t.k?'var(--accent)':'transparent', color:tab===t.k?'#fff':'var(--text-secondary)', border:'none', borderRadius:'8px 8px 0 0', cursor:'pointer'}}>{t.l}</button>
-        ))}
-      </div>
-      {tab === 'overview' && <OverviewFull />}
-      {tab === 'timeline' && <TimelineView />}
-      {tab === 'insights' && <InsightsBoard onDeviceClick={handleDeviceClick} />}
-      {tab === 'apps' && <AppView since={since} />}
-      {tab === 'wechat' && <WeChatAnalysis />}
-      {tab === 'http' && <HttpView />}
-      {tab === 'topo' && <TopologyView />}
-      {tab === 'alerts' && <AlertsView />}
-      {tab === 'admin' && <AdminPanel />}
-    </div>
+    <ConfigProvider theme={cyberpunkDark}>
+      <Layout style={{ minHeight: '100vh' }}>
+        <Sider
+          collapsible
+          collapsed={collapsed}
+          onCollapse={setCollapsed}
+          width={200}
+          collapsedWidth={56}
+          trigger={null}
+          style={{
+            position: 'fixed',
+            left: 0,
+            top: 0,
+            bottom: 0,
+            zIndex: 100,
+            borderRight: '1px solid rgba(30,58,138,0.3)',
+            overflow: 'auto',
+          }}
+        >
+          {/* Logo area */}
+          <div style={{
+            height: 56,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: collapsed ? 'center' : 'flex-start',
+            padding: collapsed ? 0 : '0 16px',
+            borderBottom: '1px solid rgba(30,58,138,0.2)',
+            gap: 8,
+          }}>
+            <span style={{ fontSize: 22 }}>🌐</span>
+            {!collapsed && (
+              <Text strong style={{ fontSize: 15, color: '#e0e8ff', whiteSpace: 'nowrap' }}>
+                流量分析系统
+              </Text>
+            )}
+          </div>
+
+          {/* Navigation */}
+          <Menu
+            theme="dark"
+            mode="inline"
+            selectedKeys={[tab]}
+            items={menuItems}
+            onClick={({ key }) => {
+              setTab(key as TabKey);
+              setDetailIp(null);
+            }}
+            style={{ borderRight: 'none', marginTop: 4 }}
+          />
+        </Sider>
+
+        <Layout style={{ marginLeft: collapsed ? 56 : 200, transition: 'margin-left 0.2s' }}>
+          {/* Header */}
+          <Header style={{
+            padding: '0 20px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            height: 56,
+            borderBottom: '1px solid rgba(30,58,138,0.2)',
+            position: 'sticky',
+            top: 0,
+            zIndex: 50,
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              {/* Collapse toggle */}
+              <span
+                onClick={() => setCollapsed(!collapsed)}
+                style={{ fontSize: 18, cursor: 'pointer', color: '#8892c0', display: 'flex', alignItems: 'center' }}
+              >
+                {collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
+              </span>
+
+              {/* Page title */}
+              <Text strong style={{ fontSize: 14, color: '#e0e8ff' }}>
+                {menuItems.find(m => m.key === tab)?.label || '仪表盘'}
+              </Text>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              {/* Stats summary */}
+              {stats.data && (
+                <Text style={{ fontSize: 12, color: '#8892c0' }}>
+                  {stats.data.total_flows.toLocaleString()} 流 · {stats.data.flows_per_sec.toFixed(1)}/s
+                </Text>
+              )}
+
+              {/* Time range */}
+              <Select
+                value={since}
+                onChange={setSince}
+                size="small"
+                style={{ width: 100 }}
+                options={[
+                  { value: '15m', label: '15分钟' },
+                  { value: '30m', label: '30分钟' },
+                  { value: '1h', label: '1小时' },
+                  { value: '24h', label: '24小时' },
+                ]}
+              />
+
+              {/* Status indicator */}
+              <Tag color={statusColor} style={{ fontSize: 11, borderRadius: 8, margin: 0 }}>
+                {statusText}
+              </Tag>
+            </div>
+          </Header>
+
+          {/* Content */}
+          <Content style={{
+            padding: 20,
+            overflow: 'auto',
+            height: 'calc(100vh - 56px)',
+            background: '#070a1e',
+          }}>
+            {renderContent()}
+          </Content>
+        </Layout>
+      </Layout>
+    </ConfigProvider>
   );
 }
