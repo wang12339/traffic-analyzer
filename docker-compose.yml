@@ -5,7 +5,7 @@ services:
       - "8123:8123"   # HTTP
       - "9000:9000"   # Native
     volumes:
-      - clickhouse-data:/var/lib/clickhouse
+      - ./clickhouse-data:/var/lib/clickhouse
       - ./deploy/clickhouse-init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://localhost:8123/ping"]
@@ -43,5 +43,4 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
-volumes:
-  clickhouse-data:
+# Data is persisted to ./clickhouse-data/ (bind mount, survives docker compose down)
