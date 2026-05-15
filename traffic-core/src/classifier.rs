@@ -330,9 +330,8 @@ pub fn classify(sni: &str, dns: &str, port: u16) -> Classification {
         }
     }
 
-    // Port-based fallback when SNI/DNS is unavailable
-    if sni.is_empty() && dns.is_empty() {
-        match port {
+    // Port-based fallback: applies even when SNI/DNS exists but no rule matched
+    match port {
             53 => return Classification::named(160, "DNS", "Network", 0.6),
             67 | 68 => return Classification::named(161, "DHCP", "Network", 0.6),
             80 => return Classification::named(162, "HTTP", "Web", 0.6),
@@ -380,8 +379,7 @@ pub fn classify(sni: &str, dns: &str, port: u16) -> Classification {
             25565 => return Classification::named(204, "Minecraft", "Game", 0.6),
             3074 => return Classification::named(205, "Xbox Live", "Game", 0.6),
             27015 | 27016 => return Classification::named(206, "Steam", "Game", 0.6),
-            _ => {}
-        }
+        _ => {}
     }
 
     Classification::unknown()
@@ -462,7 +460,12 @@ mod tests {
 
     #[test]
     fn test_classify_unknown() {
+        // Port fallback catches 443 as HTTPS even without SNI/DNS match
         let r = classify("", "nonexistent-domain-xyz.example", 443);
+        assert_eq!(r.app_name, "HTTPS");
+        assert_eq!(r.confidence, 0.6);
+        // Unknown port with no SNI/DNS match -> truly unknown
+        let r = classify("", "nonexistent.example.com", 9999);
         assert_eq!(r.app_name, "Unknown");
         assert_eq!(r.confidence, 0.0);
     }
