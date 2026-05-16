@@ -16,7 +16,7 @@ clap = { workspace = true }
 chrono = { workspace = true }
 sha2 = "0.10"
 ring = "0.17"
-aes = "0.8"
+aes = "0.9"
 ctrlc = "3.4"
 hex = "0.4"
 clickhouse = "0.12"
