@@ -327,10 +327,7 @@ impl ClickStore {
         row.insert("packets_down".into(), 0.into());
         row.insert("bytes_up".into(), rec["bytes"].as_i64().unwrap_or(0).into());
         row.insert("bytes_down".into(), 0.into());
-        row.insert(
-            "duration_ms".into(),
-            ((ls - fs).max(0) / 1_000_000).into(),
-        );
+        row.insert("duration_ms".into(), ((ls - fs).max(0) / 1_000_000).into());
         row.insert("pkt_size_hist".into(), "[0,0,0,0,0,0,0]".into());
         row.insert("pkt_iat_mean_us".into(), 0.0.into());
         row.insert("app_id".into(), app_id.into());

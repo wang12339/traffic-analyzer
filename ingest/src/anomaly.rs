@@ -72,17 +72,16 @@ impl DeviceBaseline {
         } else {
             ""
         };
-        if !domain.is_empty()
-            && !self.known_domains.contains(domain) {
-                self.known_domains.insert(domain.to_string());
-                self.domain_order.push_back(domain.to_string());
-                // LRU eviction
-                while self.domain_order.len() > MAX_DOMAINS_PER_DEVICE {
-                    if let Some(oldest) = self.domain_order.pop_front() {
-                        self.known_domains.remove(&oldest);
-                    }
+        if !domain.is_empty() && !self.known_domains.contains(domain) {
+            self.known_domains.insert(domain.to_string());
+            self.domain_order.push_back(domain.to_string());
+            // LRU eviction
+            while self.domain_order.len() > MAX_DOMAINS_PER_DEVICE {
+                if let Some(oldest) = self.domain_order.pop_front() {
+                    self.known_domains.remove(&oldest);
                 }
             }
+        }
 
         // Track throughput (moving average)
         if throughput_bps > 0.0 {
@@ -360,8 +359,6 @@ impl AnomalyDetector {
         );
 
         let ts_str = record.timestamp.format("%Y-%m-%d %H:%M:%S").to_string();
-
-        
 
         AnomalyEvent {
             timestamp: ts_str,
