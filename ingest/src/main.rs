@@ -1,3 +1,4 @@
+mod anomaly;
 mod dns_parser;
 mod flow_agg;
 mod http_parser;
@@ -7,7 +8,6 @@ mod redis_parser;
 mod storage;
 mod tcp_reasm;
 mod tls_parser;
-mod anomaly;
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -136,7 +136,10 @@ async fn main() -> Result<()> {
                             }
                             let msg_len = u32::from_le_bytes(len_buf) as usize;
                             if msg_len > MAX_MSG_LEN {
-                                warn!("Agent {} oversize msg ({} > {}), drop", agent_id, msg_len, MAX_MSG_LEN);
+                                warn!(
+                                    "Agent {} oversize msg ({} > {}), drop",
+                                    agent_id, msg_len, MAX_MSG_LEN
+                                );
                                 return;
                             }
                             buf.resize(msg_len, 0);
@@ -151,10 +154,17 @@ async fn main() -> Result<()> {
                                         use tokio::sync::mpsc::error::TrySendError;
                                         match tx.try_send((agent_id.clone(), f)) {
                                             Err(TrySendError::Full(_)) => {
-                                                static DROP_COUNT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-                                                let c = DROP_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                                                static DROP_COUNT: std::sync::atomic::AtomicU64 =
+                                                    std::sync::atomic::AtomicU64::new(0);
+                                                let c = DROP_COUNT.fetch_add(
+                                                    1,
+                                                    std::sync::atomic::Ordering::Relaxed,
+                                                );
                                                 if c % 1000 == 0 {
-                                                    warn!("Ingest channel full, dropped {} frames", c + 1000);
+                                                    warn!(
+                                                        "Ingest channel full, dropped {} frames",
+                                                        c + 1000
+                                                    );
                                                 }
                                             }
                                             Err(TrySendError::Closed(_)) => {

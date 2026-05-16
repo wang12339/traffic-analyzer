@@ -90,7 +90,11 @@ pub fn parse_command(buf: &[u8]) -> Option<RedisCommand> {
             let strlen: usize = s[..len_end].parse().ok()?;
             let start = 1 + len_end + 2 + strlen + 2;
             // 防止恶意超长长度字段导致 panic
-            if start > payload.len() { "" } else { &payload[start..] }
+            if start > payload.len() {
+                ""
+            } else {
+                &payload[start..]
+            }
         } else {
             ""
         };

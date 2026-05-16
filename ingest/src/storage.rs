@@ -114,9 +114,13 @@ impl ClickStore {
         "#,
             database
         );
-        client.query(&anomaly_ddl).execute().await.unwrap_or_else(|e| {
-            warn!("CREATE anomaly_alerts (may be ok if exists): {}", e);
-        });
+        client
+            .query(&anomaly_ddl)
+            .execute()
+            .await
+            .unwrap_or_else(|e| {
+                warn!("CREATE anomaly_alerts (may be ok if exists): {}", e);
+            });
 
         // Create device_info table
         let dev_ddl = format!(
@@ -401,14 +405,22 @@ impl ClickStore {
     }
 
     /// Write an anomaly alert event to ClickHouse.
-    pub async fn write_anomaly_alert(&self, event: &crate::anomaly::AnomalyEvent) -> Result<(), anyhow::Error> {
+    pub async fn write_anomaly_alert(
+        &self,
+        event: &crate::anomaly::AnomalyEvent,
+    ) -> Result<(), anyhow::Error> {
         if event.src_ip.is_empty() {
             return Ok(());
         }
-        let query = format!("INSERT INTO {}.anomaly_alerts FORMAT JSONEachRow", self.database);
+        let query = format!(
+            "INSERT INTO {}.anomaly_alerts FORMAT JSONEachRow",
+            self.database
+        );
         let url = format!(
             "{}?database={}&query={}",
-            self.ch_http_url, self.database, Self::urlencoding(&query)
+            self.ch_http_url,
+            self.database,
+            Self::urlencoding(&query)
         );
         let body = serde_json::json!({
             "timestamp": event.timestamp,

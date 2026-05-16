@@ -259,7 +259,9 @@ mod tests {
         FlowKey::canonical(
             IpAddr::V4(Ipv4Addr::new(192, 168, 1, 2)),
             IpAddr::V4(Ipv4Addr::new(93, 184, 216, 34)),
-            54321, 443, 6,
+            54321,
+            443,
+            6,
         )
     }
 
@@ -386,7 +388,9 @@ mod tests {
         let key2 = FlowKey::canonical(
             IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1)),
             IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8)),
-            10000, 443, 6,
+            10000,
+            443,
+            6,
         );
 
         reasm.process_segment(&key1, b"flow1 data", true, Some(0));

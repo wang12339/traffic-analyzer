@@ -686,7 +686,9 @@ pub async fn get_anomalies(state: web::Data<AppState>) -> HttpResponse {
         "SELECT count() as total,avg(risk_score) as avg_risk,max(risk_score) as max_risk,          countDistinct(src_ip) as affected_devices          FROM {}.anomaly_alerts WHERE timestamp>={}",
         state.database, since
     );
-    let resolved: std::collections::HashSet<String> = state.resolved_ips.lock()
+    let resolved: std::collections::HashSet<String> = state
+        .resolved_ips
+        .lock()
         .map(|r| r.clone())
         .unwrap_or_default();
     match tokio::join!(
@@ -696,9 +698,7 @@ pub async fn get_anomalies(state: web::Data<AppState>) -> HttpResponse {
         (Ok(mut events), Ok(summary)) => {
             // Filter out resolved IPs from events
             if !resolved.is_empty() {
-                events.retain(|e| {
-                    !resolved.contains(&e.src_ip)
-                });
+                events.retain(|e| !resolved.contains(&e.src_ip));
             }
             HttpResponse::Ok().json(ApiResponse::ok(AnomalyResponse {
                 summary: AnomalySummary {
@@ -733,10 +733,7 @@ pub async fn resolve_anomalies(
     if let Ok(mut resolved) = state.resolved_ips.lock() {
         resolved.insert(ip.clone());
     }
-    HttpResponse::Ok().json(ApiResponse::ok(ResolveResponse {
-        resolved: true,
-        ip,
-    }))
+    HttpResponse::Ok().json(ApiResponse::ok(ResolveResponse { resolved: true, ip }))
 }
 
 #[utoipa::path(
@@ -754,9 +751,16 @@ pub async fn health(state: web::Data<AppState>) -> HttpResponse {
         state.database
     );
     match ch_one::<StatsRow>(&state, &sql).await {
-        Ok(r) => HttpResponse::Ok().json(HealthResponse { status: "ok".into(), flows: r.total_flows, message: None }),
-        Err(e) => HttpResponse::ServiceUnavailable()
-            .json(HealthResponse { status: "error".into(), flows: 0, message: Some(e) }),
+        Ok(r) => HttpResponse::Ok().json(HealthResponse {
+            status: "ok".into(),
+            flows: r.total_flows,
+            message: None,
+        }),
+        Err(e) => HttpResponse::ServiceUnavailable().json(HealthResponse {
+            status: "error".into(),
+            flows: 0,
+            message: Some(e),
+        }),
     }
 }
 
@@ -796,7 +800,11 @@ pub async fn get_admin_status(state: web::Data<AppState>) -> HttpResponse {
 pub async fn get_metrics(state: web::Data<AppState>) -> HttpResponse {
     let uptime = (chrono::Utc::now() - state.started_at).num_seconds().max(0);
     let total = state.total_requests.load(Ordering::Relaxed);
-    let path_counts = state.path_counts.lock().map(|pc| pc.clone()).unwrap_or_default();
+    let path_counts = state
+        .path_counts
+        .lock()
+        .map(|pc| pc.clone())
+        .unwrap_or_default();
     let ch_errors = state.ch_errors.load(Ordering::Relaxed);
 
     let mut body = String::new();
@@ -809,7 +817,10 @@ pub async fn get_metrics(state: web::Data<AppState>) -> HttpResponse {
     body.push_str("# HELP traffic_api_requests_by_path Requests by path\n");
     body.push_str("# TYPE traffic_api_requests_by_path counter\n");
     for (path, count) in &path_counts {
-        body.push_str(&format!("traffic_api_requests_by_path{{path=\"{}\"}} {}\n", path, count));
+        body.push_str(&format!(
+            "traffic_api_requests_by_path{{path=\"{}\"}} {}\n",
+            path, count
+        ));
     }
     body.push_str("# HELP traffic_api_ch_errors_total ClickHouse query errors\n");
     body.push_str("# TYPE traffic_api_ch_errors_total counter\n");

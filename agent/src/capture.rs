@@ -1,11 +1,11 @@
 //! AF_PACKET capture loop: reads raw ethernet frames from a network interface.
 
-use crate::parse::{parse_ethernet_frame, sockaddr_ll, if_nametoindex, SNAPLEN};
+use crate::parse::{if_nametoindex, parse_ethernet_frame, sockaddr_ll, SNAPLEN};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::SyncSender;
 use std::sync::Arc;
-use traffic_core::PacketFrame;
 use tracing::{info, warn};
+use traffic_core::PacketFrame;
 
 /// Spawns a capture thread that reads raw frames from `iface` via AF_PACKET
 /// and sends them through `tx`. Returns when the thread is spawned or on error.
@@ -101,8 +101,8 @@ pub fn spawn_capture_loop(
             pkt_count += 1;
             if let Some(frame) = parse_ethernet_frame(&buf[..n]) {
                 if tx.try_send(frame).is_err() {
-                // Channel full — 背压传导到内核 socket buffer，内核自动丢包
-            }
+                    // Channel full — 背压传导到内核 socket buffer，内核自动丢包
+                }
             }
             let now = traffic_core::now_ns();
             if now - last_report_ns >= 10_000_000_000 {

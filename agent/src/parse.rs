@@ -95,12 +95,23 @@ fn parse_ipv4(buf: &[u8], mac: [u8; 6]) -> Option<PacketFrame> {
     }
     let hdr_start = 14 + ihl;
     // IPv4 total length includes IP header — subtract both IP and L4 header
-    let l4_hdr_len = if proto == 6 { ((buf[hdr_start + 12] >> 4) * 4) as usize } else { 8 };
+    let l4_hdr_len = if proto == 6 {
+        ((buf[hdr_start + 12] >> 4) * 4) as usize
+    } else {
+        8
+    };
     let pay_len = (u16::from_be_bytes([buf[16], buf[17]]) as usize)
         .saturating_sub(ihl + l4_hdr_len)
         .min(SNAPLEN);
-    build_frame(buf, hdr_start, proto,
-        ip_from_bytes(&buf[26..30]), ip_from_bytes(&buf[30..34]), mac, pay_len)
+    build_frame(
+        buf,
+        hdr_start,
+        proto,
+        ip_from_bytes(&buf[26..30]),
+        ip_from_bytes(&buf[30..34]),
+        mac,
+        pay_len,
+    )
 }
 
 fn parse_ipv6(buf: &[u8], mac: [u8; 6]) -> Option<PacketFrame> {
@@ -112,12 +123,23 @@ fn parse_ipv6(buf: &[u8], mac: [u8; 6]) -> Option<PacketFrame> {
         return None;
     }
     // IPv6 payload length field excludes the 40-byte IP header
-    let l4_hdr_len = if proto == 6 { ((buf[54 + 12] >> 4) * 4) as usize } else { 8 };
+    let l4_hdr_len = if proto == 6 {
+        ((buf[54 + 12] >> 4) * 4) as usize
+    } else {
+        8
+    };
     let pay_len = (u16::from_be_bytes([buf[4], buf[5]]) as usize)
         .saturating_sub(l4_hdr_len)
         .min(SNAPLEN);
-    build_frame(buf, 54, proto,
-        ip_from_bytes(&buf[22..38]), ip_from_bytes(&buf[38..54]), mac, pay_len)
+    build_frame(
+        buf,
+        54,
+        proto,
+        ip_from_bytes(&buf[22..38]),
+        ip_from_bytes(&buf[38..54]),
+        mac,
+        pay_len,
+    )
 }
 
 /// Get network interface index from name (SIOCGIFINDEX).

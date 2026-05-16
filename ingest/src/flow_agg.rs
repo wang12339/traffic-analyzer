@@ -260,9 +260,7 @@ impl FlowAggregator {
         // ─── L7 Analysis ───
         if frame.protocol == 6 && !frame.payload.is_empty() {
             let is_client_side = is_up;
-            Self::process_l7_tcp(
-                &mut self.tcp_reasm, state, &key, frame, is_client_side,
-            );
+            Self::process_l7_tcp(&mut self.tcp_reasm, state, &key, frame, is_client_side);
         } else if frame.protocol == 17 && !frame.payload.is_empty() {
             Self::process_l7_udp(state, frame);
         }
@@ -283,7 +281,11 @@ impl FlowAggregator {
         frame: &PacketFrame,
         is_client_side: bool,
     ) {
-        let tcp_seq = if frame.tcp_seq != 0 { Some(frame.tcp_seq) } else { None };
+        let tcp_seq = if frame.tcp_seq != 0 {
+            Some(frame.tcp_seq)
+        } else {
+            None
+        };
         Self::process_l7_tls(tcp_reasm, state, key, frame, is_client_side, tcp_seq);
         Self::process_l7_http(state, frame, is_client_side);
         Self::process_l7_mysql(state, key, frame, is_client_side);
@@ -314,9 +316,13 @@ impl FlowAggregator {
             if sh.tls_version != 0 {
                 state.tls_version = Some(format!(
                     "TLSv1.{}",
-                    if sh.tls_version == 0x0304 { 3 }
-                    else if sh.tls_version == 0x0303 { 2 }
-                    else { 1 }
+                    if sh.tls_version == 0x0304 {
+                        3
+                    } else if sh.tls_version == 0x0303 {
+                        2
+                    } else {
+                        1
+                    }
                 ));
                 state.ja3s = Some(sh.ja3s.clone());
                 state.server_cipher_suite = Some(sh.cipher_suite);
@@ -325,11 +331,7 @@ impl FlowAggregator {
     }
 
     /// HTTP cleartext + CONNECT proxy parsing.
-    fn process_l7_http(
-        state: &mut FlowState,
-        frame: &PacketFrame,
-        is_client_side: bool,
-    ) {
+    fn process_l7_http(state: &mut FlowState, frame: &PacketFrame, is_client_side: bool) {
         if frame.dst_port == 80 || frame.dst_port == 8080 || frame.dst_port == 8000 {
             if is_client_side {
                 if let Some(http) = http_parser::parse_http_request(&frame.payload) {
@@ -377,11 +379,7 @@ impl FlowAggregator {
     }
 
     /// Redis protocol parsing.
-    fn process_l7_redis(
-        state: &mut FlowState,
-        key: &FlowKey,
-        frame: &PacketFrame,
-    ) {
+    fn process_l7_redis(state: &mut FlowState, key: &FlowKey, frame: &PacketFrame) {
         if frame.dst_port != 6379 && frame.src_port != 6379 {
             return;
         }
@@ -392,21 +390,14 @@ impl FlowAggregator {
             }
             if r.dangerous {
                 meta.push_str(" ⚠️");
-                tracing::warn!(
-                    "Dangerous Redis command: {} from {}",
-                    r.command,
-                    key.src_ip
-                );
+                tracing::warn!("Dangerous Redis command: {} from {}", r.command, key.src_ip);
             }
             state.http_ua = Some(meta);
         }
     }
 
     /// UDP protocol analysis: DNS + QUIC SNI.
-    fn process_l7_udp(
-        state: &mut FlowState,
-        frame: &PacketFrame,
-    ) {
+    fn process_l7_udp(state: &mut FlowState, frame: &PacketFrame) {
         // DNS
         if frame.dst_port == 53 || frame.src_port == 53 {
             if let Some(domain) = dns_parser::parse_dns_query(&frame.payload) {
@@ -617,7 +608,7 @@ impl ShardedFlowAggregator {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::net::{Ipv4Addr, Ipv6Addr};
+    use std::net::Ipv4Addr;
     use traffic_core::FlowKey;
 
     #[test]

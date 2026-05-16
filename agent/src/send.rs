@@ -15,11 +15,7 @@ const RECONNECT_DELAY: Duration = Duration::from_secs(5);
 
 /// Runs the send loop on a Tokio runtime. Reads frames from `rx`, batches them,
 /// and sends to `ingest_addr` via TCP. Blocks until `running` is false.
-pub fn run_send_loop(
-    ingest_addr: String,
-    rx: Receiver<PacketFrame>,
-    running: Arc<AtomicBool>,
-) {
+pub fn run_send_loop(ingest_addr: String, rx: Receiver<PacketFrame>, running: Arc<AtomicBool>) {
     let rt = tokio::runtime::Runtime::new().expect("create tokio runtime");
     rt.block_on(async {
         let mut batch: Vec<PacketFrame> = Vec::with_capacity(SEND_BUF_SIZE);

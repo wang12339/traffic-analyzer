@@ -11,7 +11,6 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use utoipa::ToSchema;
 
-
 #[derive(Parser)]
 #[command(name = "api", about = "Traffic analysis API server")]
 pub struct Args {
@@ -732,7 +731,12 @@ mod tests {
     #[test]
     fn test_identify_device_model_apple() {
         let model = identify_device_model(&[], &["apple.com".into(), "icloud.com".into()], "", "");
-        assert!(model.is_empty() || model.contains("iPhone") || model.contains("Mac") || model.contains("iPad"));
+        assert!(
+            model.is_empty()
+                || model.contains("iPhone")
+                || model.contains("Mac")
+                || model.contains("iPad")
+        );
     }
 
     #[test]
@@ -749,7 +753,12 @@ mod tests {
 
     #[test]
     fn test_identify_device_model_macbook() {
-        let model = identify_device_model(&[], &["apple.com".into()], "", "Mozilla/5.0 Macintosh Intel Mac OS X MacBookPro");
+        let model = identify_device_model(
+            &[],
+            &["apple.com".into()],
+            "",
+            "Mozilla/5.0 Macintosh Intel Mac OS X MacBookPro",
+        );
         assert_eq!(model, "MacBook Pro");
     }
 

@@ -95,7 +95,7 @@ mod tests {
     #[test]
     fn test_compression_pointer() {
         // A response with a compression pointer (top 2 bits set)
-        let mut buf = vec![
+        let buf = vec![
             0x00, 0x01, 0x81, 0x80, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x07, b'e',
             b'x', b'a', b'm', b'p', b'l', b'e', 0x03, b'c', b'o', b'm', 0x00, 0x00, 0x01, 0x00,
             0x01, // Compression pointer in answer: c00c

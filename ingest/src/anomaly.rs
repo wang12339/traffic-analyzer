@@ -13,8 +13,8 @@
 
 use chrono::Timelike;
 use std::collections::{HashMap, HashSet, VecDeque};
-use traffic_core::FlowRecord;
 use tracing::debug;
+use traffic_core::FlowRecord;
 
 /// Max unique domains tracked per device (LRU eviction).
 const MAX_DOMAINS_PER_DEVICE: usize = 2000;
@@ -129,7 +129,8 @@ impl DeviceBaseline {
         let duration_sec = (record.duration_ms as f64 / 1000.0).max(0.1);
         let flow_throughput = flow_bytes / duration_sec;
 
-        let mean: f64 = self.throughput_samples.iter().sum::<f64>() / self.throughput_samples.len() as f64;
+        let mean: f64 =
+            self.throughput_samples.iter().sum::<f64>() / self.throughput_samples.len() as f64;
         if mean < 1.0 {
             return 0.0;
         }
@@ -258,9 +259,10 @@ impl AnomalyDetector {
         let components = self.compute_component_scores(record);
 
         let ip = &record.src_ip;
-        let device = self.devices.entry(ip.clone()).or_insert_with(|| {
-            DeviceBaseline::new(ts_ns)
-        });
+        let device = self
+            .devices
+            .entry(ip.clone())
+            .or_insert_with(|| DeviceBaseline::new(ts_ns));
 
         let score = device.risk_score(record);
 
@@ -279,7 +281,8 @@ impl AnomalyDetector {
             if ts_ns.saturating_sub(last) > ALERT_COOLDOWN_NS {
                 self.alert_cooldown.insert(dedup_key, ts_ns);
                 if self.alert_cooldown.len() > 1000 {
-                    self.alert_cooldown.retain(|_, v| ts_ns.saturating_sub(*v) <= ALERT_COOLDOWN_NS * 2);
+                    self.alert_cooldown
+                        .retain(|_, v| ts_ns.saturating_sub(*v) <= ALERT_COOLDOWN_NS * 2);
                 }
                 Some(alert)
             } else {
@@ -291,7 +294,9 @@ impl AnomalyDetector {
 
         // LRU eviction for device map
         if self.devices.len() > MAX_DEVICES {
-            if let Some(oldest_ip) = self.devices.iter()
+            if let Some(oldest_ip) = self
+                .devices
+                .iter()
                 .min_by_key(|(_, d)| d.last_seen_ns)
                 .map(|(ip, _)| ip.clone())
             {
@@ -332,9 +337,15 @@ impl AnomalyDetector {
         let timing = components.timing;
 
         let mut reasons = Vec::new();
-        if novelty > 15.0 { reasons.push(format!("新域名: {}", domain)); }
-        if volume > 15.0 { reasons.push("流量突增(>5倍基线)".to_string()); }
-        if timing > 15.0 { reasons.push("非活跃时段活动".to_string()); }
+        if novelty > 15.0 {
+            reasons.push(format!("新域名: {}", domain));
+        }
+        if volume > 15.0 {
+            reasons.push("流量突增(>5倍基线)".to_string());
+        }
+        if timing > 15.0 {
+            reasons.push("非活跃时段活动".to_string());
+        }
 
         let reason = if reasons.is_empty() {
             format!("风险评分 {}", score)
@@ -349,9 +360,7 @@ impl AnomalyDetector {
             novelty, volume, timing,
         );
 
-        let ts_str = record.timestamp
-            .format("%Y-%m-%d %H:%M:%S")
-            .to_string();
+        let ts_str = record.timestamp.format("%Y-%m-%d %H:%M:%S").to_string();
 
         let event = AnomalyEvent {
             timestamp: ts_str,
@@ -371,7 +380,7 @@ impl AnomalyDetector {
 mod tests {
     use super::*;
     use chrono::Utc;
-    use traffic_core::{now_ns, Classification};
+    use traffic_core::now_ns;
 
     fn make_flow(src_ip: &str, sni: &str, dns: &str, app: &str, bytes: i64, ms: i64) -> FlowRecord {
         FlowRecord {
@@ -436,7 +445,14 @@ mod tests {
 
         // Establish baseline with MIN_BASELINE_FLOWS known domains
         for i in 0..MIN_BASELINE_FLOWS {
-            let flow = make_flow("192.168.1.2", &format!("known{}.com", i), "", "Web", 1000, 100);
+            let flow = make_flow(
+                "192.168.1.2",
+                &format!("known{}.com", i),
+                "",
+                "Web",
+                1000,
+                100,
+            );
             let (_, _) = detector.evaluate(&flow, ts);
         }
 
@@ -454,12 +470,26 @@ mod tests {
 
         // Establish baseline with small flows
         for i in 0..MIN_BASELINE_FLOWS {
-            let flow = make_flow("192.168.1.3", &format!("site{}.com", i), "", "Web", 1000, 100);
+            let flow = make_flow(
+                "192.168.1.3",
+                &format!("site{}.com", i),
+                "",
+                "Web",
+                1000,
+                100,
+            );
             let (_, _) = detector.evaluate(&flow, ts);
         }
 
         // Now send a massive flow (>5x typical throughput)
-        let flow = make_flow("192.168.1.3", "big-download.com", "", "Web", 10_000_000, 100);
+        let flow = make_flow(
+            "192.168.1.3",
+            "big-download.com",
+            "",
+            "Web",
+            10_000_000,
+            100,
+        );
         let (score, _) = detector.evaluate(&flow, ts);
         // Large volume should contribute
         assert!(score > 0);
@@ -471,7 +501,14 @@ mod tests {
         let ts = now_ns();
 
         for i in 0..MIN_BASELINE_FLOWS {
-            let flow = make_flow("192.168.1.10", &format!("site{}.com", i), "", "Web", 1000, 100);
+            let flow = make_flow(
+                "192.168.1.10",
+                &format!("site{}.com", i),
+                "",
+                "Web",
+                1000,
+                100,
+            );
             let (_, _) = detector.evaluate(&flow, ts);
             let flow2 = make_flow("10.0.0.5", &format!("other{}.com", i), "", "Web", 1000, 100);
             detector.evaluate(&flow2, ts);
@@ -496,12 +533,26 @@ mod tests {
 
         // Establish baseline
         for i in 0..MIN_BASELINE_FLOWS {
-            let flow = make_flow("192.168.1.99", &format!("site{}.com", i), "", "Web", 1000, 100);
+            let flow = make_flow(
+                "192.168.1.99",
+                &format!("site{}.com", i),
+                "",
+                "Web",
+                1000,
+                100,
+            );
             let (_, _) = detector.evaluate(&flow, ts);
         }
 
         // Trigger with high novelty + volume
-        let flow = make_flow("192.168.1.99", "extremely-new-domain.com", "", "Web", 50_000_000, 50);
+        let flow = make_flow(
+            "192.168.1.99",
+            "extremely-new-domain.com",
+            "",
+            "Web",
+            50_000_000,
+            50,
+        );
         let (score, event) = detector.evaluate(&flow, ts);
         assert!(score > 0);
         if score >= 50 {

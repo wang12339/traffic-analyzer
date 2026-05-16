@@ -125,10 +125,7 @@ pub async fn get_apps(state: web::Data<AppState>, q: web::Query<TimeQuery>) -> H
     ),
     tag = "Devices"
 )]
-pub async fn get_devices(
-    state: web::Data<AppState>,
-    q: web::Query<TimeQuery>,
-) -> HttpResponse {
+pub async fn get_devices(state: web::Data<AppState>, q: web::Query<TimeQuery>) -> HttpResponse {
     let se = since_expr(q.since.as_deref().unwrap_or("24h"));
     let sql = format!(
         "SELECT src_ip,count() as flows,sum(bytes_up+bytes_down) as bytes_total,\
@@ -219,10 +216,7 @@ pub async fn get_trends(state: web::Data<AppState>, q: web::Query<TimeQuery>) ->
     ),
     tag = "Export"
 )]
-pub async fn export_csv(
-    state: web::Data<AppState>,
-    query: web::Query<FlowQuery>,
-) -> HttpResponse {
+pub async fn export_csv(state: web::Data<AppState>, query: web::Query<FlowQuery>) -> HttpResponse {
     let since = query.since.as_deref().unwrap_or("1h");
     let se = since_expr(since);
     let mut cond = format!("timestamp >= {}", se);

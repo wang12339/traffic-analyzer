@@ -31,7 +31,8 @@ async fn tracing_middleware<B: MessageBody + 'static>(
     // Capture AppState from the request before consuming it
     let state = req.app_data::<web::Data<AppState>>().cloned();
 
-    let span = tracing::info_span!("request", request_id = %request_id, method = %method, path = %path);
+    let span =
+        tracing::info_span!("request", request_id = %request_id, method = %method, path = %path);
     let _guard = span.enter();
 
     let res = next.call(req).await?;
@@ -60,10 +61,7 @@ async fn auth_middleware<B: MessageBody + 'static>(
         .map(|d| d.api_key.clone())
         .unwrap_or_default();
     // 免认证路径：健康检查、API 文档。所有来源均需认证（不再对 loopback 放行）。
-    if api_key.is_empty()
-        || req.path() == "/api/health"
-        || req.path().starts_with("/api/docs/")
-    {
+    if api_key.is_empty() || req.path() == "/api/health" || req.path().starts_with("/api/docs/") {
         return next.call(req).await;
     }
     let key = req
@@ -102,7 +100,10 @@ async fn main() -> anyhow::Result<()> {
     // Set API_KEY env var explicitly to use a known value.
     let api_key = std::env::var("API_KEY").unwrap_or_else(|_| {
         let key = uuid::Uuid::new_v4().to_string();
-        info!("No API_KEY set — generated random key for this session: {}", key);
+        info!(
+            "No API_KEY set — generated random key for this session: {}",
+            key
+        );
         info!("Set API_KEY env var to use a persistent key (e.g. export API_KEY=my-key)");
         key
     });
