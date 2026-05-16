@@ -176,7 +176,7 @@ export function DashboardPage() {
               {appData.map((a: any) => {
                 const pct = s?.total_flows ? (a.flow_count / s.total_flows * 100) : 0;
                 return (
-                  <div key={a.app_id} style={{ marginBottom: 8 }}>
+                  <div key={a.app_id + '-' + a.app_name} style={{ marginBottom: 8 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 2 }}>
                       <span>{a.app_name}</span>
                       <span style={{ color: '#8892c0' }}>{a.flow_count}次</span>

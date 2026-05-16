@@ -50,7 +50,7 @@ export function OverviewFull() {
         <h3 style={{fontSize:14,fontWeight:600,marginBottom:10}}>📱 应用排行</h3>
         {appList.length === 0 ? <EmptyState message="暂无应用数据" /> : appList.map((a: any) => {
           const pct = s.total_flows>0?(a.flow_count/s.total_flows*100):0;
-          return <div key={a.app_id} style={{marginBottom:6}}>
+          return <div key={a.app_id + '-' + a.app_name} style={{marginBottom:6}}>
             <div style={{display:'flex',justifyContent:'space-between',fontSize:12,marginBottom:1}}>
               <span>{a.app_name}</span><span style={{color:'var(--text-secondary)'}}>{a.flow_count}次 ({pct.toFixed(1)}%)</span>
             </div>

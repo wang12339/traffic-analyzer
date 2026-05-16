@@ -1,22 +1,15 @@
 import React, { useMemo } from 'react';
 import { Card, Row, Col, Statistic, Tag, Table, Typography } from 'antd';
 import { SafetyOutlined, LinkOutlined, KeyOutlined, GlobalOutlined } from '@ant-design/icons';
+import { getFlows, getSni } from '../utils/api';
 import { useApi } from '../hooks/useApi';
 import { LoadingSpinner, ErrorState, EmptyState } from './LoadingState';
 
 const { Text } = Typography;
 
 export function HttpView() {
-  const sni = useApi(
-    () => fetch('/api/sni?since=1h').then(r => r.json()).then(j => j.success ? j.data : Promise.reject(j.error)),
-    [],
-    { interval: 15000 }
-  );
-  const flows = useApi(
-    () => fetch('/api/flows?since=1h&limit=300').then(r => r.json()).then(j => j.success ? j.data : Promise.reject(j.error)),
-    [],
-    { interval: 15000 }
-  );
+  const sni = useApi(() => getSni('24h'), [], { interval: 15000 });
+  const flows = useApi(() => getFlows({ limit: 300, since: '24h' }), [], { interval: 15000 });
 
   // Filter TLS flows (those with SNI)
   const tlsFlows = useMemo(() => {

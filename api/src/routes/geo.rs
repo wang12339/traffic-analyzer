@@ -1,7 +1,6 @@
 use crate::routes::{api_err, ApiResponse, AppState};
 use actix_web::{web, HttpResponse};
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
 
 #[derive(Deserialize)]
 pub struct GeoQuery {
@@ -28,7 +27,7 @@ struct IpApiBatchItem {
 
 /// Geo-IP lookup via ip-api.com proxy (avoids CORS issues).
 /// GET /api/geo-lookup?ips=1.1.1.1,8.8.8.8
-pub async fn geo_lookup(state: web::Data<Arc<AppState>>, q: web::Query<GeoQuery>) -> HttpResponse {
+pub async fn geo_lookup(state: web::Data<AppState>, q: web::Query<GeoQuery>) -> HttpResponse {
     let ips: Vec<&str> = q
         .ips
         .split(',')

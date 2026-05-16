@@ -61,7 +61,8 @@ impl ClickStore {
                 src_mac         String,
                 device_manufacturer String,
                 device_hostname String,
-                engines         String
+                engines         String,
+                risk_score      UInt8 DEFAULT 0
             ) ENGINE = ReplacingMergeTree(last_seen)
             PARTITION BY toYYYYMM(timestamp)
             ORDER BY (timestamp, src_ip, first_seen)
@@ -92,7 +93,30 @@ impl ClickStore {
         "#,
             database
         );
-        client.query(&agg_ddl).execute().await.ok();
+        client.query(&agg_ddl).execute().await.unwrap_or_else(|e| {
+            warn!("CREATE flow_stats_daily (may be ok if exists): {}", e);
+        });
+
+        // Create anomaly_alerts table
+        let anomaly_ddl = format!(
+            r#"
+            CREATE TABLE IF NOT EXISTS {}.anomaly_alerts (
+                timestamp       DateTime,
+                src_ip          String,
+                src_mac         String,
+                risk_score      UInt8,
+                reason          String,
+                details         String,
+                resolved        UInt8 DEFAULT 0
+            ) ENGINE = MergeTree
+            ORDER BY (src_ip, timestamp)
+            TTL toDateTime(timestamp) + INTERVAL 30 DAY
+        "#,
+            database
+        );
+        client.query(&anomaly_ddl).execute().await.unwrap_or_else(|e| {
+            warn!("CREATE anomaly_alerts (may be ok if exists): {}", e);
+        });
 
         // Create device_info table
         let dev_ddl = format!(
@@ -109,7 +133,9 @@ impl ClickStore {
         "#,
             database
         );
-        client.query(&dev_ddl).execute().await.ok();
+        client.query(&dev_ddl).execute().await.unwrap_or_else(|e| {
+            warn!("CREATE device_info (may be ok if exists): {}", e);
+        });
 
         let ch_http_url = format!("http://{}/", addr);
 
@@ -163,6 +189,7 @@ impl ClickStore {
                 "src_mac": r.src_mac, "device_manufacturer": r.device_manufacturer,
                 "device_hostname": r.device_hostname,
                 "engines": r.engines,
+                "risk_score": r.risk_score,
             }));
         }
         let body = json_rows
@@ -313,6 +340,7 @@ impl ClickStore {
             rec["hostname"].as_str().unwrap_or("").into(),
         );
         row.insert("engines".into(), "".into());
+        row.insert("risk_score".into(), 0.into());
 
         let body = serde_json::to_string(&row)?;
         let query = format!("INSERT INTO {}.flows FORMAT JSONEachRow", &self.database);
@@ -370,6 +398,28 @@ impl ClickStore {
         );
         let body_str = body.to_string();
         self.http_post_retry(&url, body_str).await
+    }
+
+    /// Write an anomaly alert event to ClickHouse.
+    pub async fn write_anomaly_alert(&self, event: &crate::anomaly::AnomalyEvent) -> Result<(), anyhow::Error> {
+        if event.src_ip.is_empty() {
+            return Ok(());
+        }
+        let query = format!("INSERT INTO {}.anomaly_alerts FORMAT JSONEachRow", self.database);
+        let url = format!(
+            "{}?database={}&query={}",
+            self.ch_http_url, self.database, Self::urlencoding(&query)
+        );
+        let body = serde_json::json!({
+            "timestamp": event.timestamp,
+            "src_ip": event.src_ip,
+            "src_mac": event.src_mac,
+            "risk_score": event.risk_score,
+            "reason": event.reason,
+            "details": event.details,
+            "resolved": event.resolved,
+        });
+        self.http_post_retry(&url, body.to_string()).await
     }
 
     /// Store an HTTP request/response record from mitmproxy.

@@ -24,7 +24,7 @@ export function AppView({ since }: { since: string }) {
         <h3 style={{marginBottom:14, fontSize:14, fontWeight:600}}>已识别应用</h3>
         {appList.map(a => {
           const pct = total > 0 ? (a.total_bytes/total*100).toFixed(1) : '0';
-          return <div key={a.app_id} style={{marginBottom:10}}>
+          return <div key={a.app_id + '-' + a.app_name} style={{marginBottom:10}}>
             <div style={{display:'flex', justifyContent:'space-between', fontSize:13, marginBottom:3}}>
               <span style={{fontWeight:500}}>{a.app_name}</span>
               <span style={{color:'var(--text-secondary)'}}>{fmt(a.total_bytes)} / {a.flow_count}次 / {a.device_count}设备</span>

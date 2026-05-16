@@ -8,20 +8,29 @@ fn router_ssh(cmd: &str) -> String {
         Ok(h) if !h.is_empty() => h,
         _ => return "SSH router management disabled: set ROUTER_SSH_HOST env var".into(),
     };
-    let password = std::env::var("ROUTER_SSH_PASSWORD").unwrap_or_else(|_| "admin".into());
+    let password = std::env::var("ROUTER_SSH_PASSWORD").unwrap_or_default();
+    if password.is_empty() {
+        return "SSH router management disabled: ROUTER_SSH_PASSWORD not set".into();
+    }
     let port = std::env::var("ROUTER_SSH_PORT").unwrap_or_else(|_| "22".into());
     let output = Shell::new("sshpass")
         .args([
-            "-p",
-            &password,
+            "-e",
             "ssh",
             "-o",
             "StrictHostKeyChecking=no",
+            "-o",
+            "ConnectTimeout=10",
+            "-o",
+            "ServerAliveInterval=5",
+            "-o",
+            "ServerAliveCountMax=3",
             "-p",
             &port,
             &format!("root@{}", host),
             cmd,
         ])
+        .env("SSHPASS", &password)
         .output();
     match output {
         Ok(o) => {
@@ -67,7 +76,7 @@ pub async fn agent_status() -> HttpResponse {
     tag = "Agent"
 )]
 pub async fn agent_start() -> HttpResponse {
-    let ingest = std::env::var("INGEST_ADDR").unwrap_or_else(|_| "192.168.66.186:9100".into());
+    let ingest = std::env::var("INGEST_ADDR").unwrap_or_else(|_| "127.0.0.1:9100".into());
     let r = router_ssh(&format!(
         "killall agent 2>/dev/null; sleep 1; nohup /root/agent -n br-lan -s {} > /tmp/agent.log 2>&1 &",
         ingest
@@ -101,7 +110,7 @@ pub async fn agent_stop() -> HttpResponse {
     tag = "Agent"
 )]
 pub async fn agent_restart() -> HttpResponse {
-    let ingest = std::env::var("INGEST_ADDR").unwrap_or_else(|_| "192.168.66.186:9100".into());
+    let ingest = std::env::var("INGEST_ADDR").unwrap_or_else(|_| "127.0.0.1:9100".into());
     let r = router_ssh(&format!(
         "killall agent 2>/dev/null; sleep 2; nohup /root/agent -n br-lan -s {} > /tmp/agent.log 2>&1 &",
         ingest

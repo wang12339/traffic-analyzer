@@ -264,10 +264,18 @@ pub fn parse_server_hello(buf: &[u8]) -> Option<TlsServerHello> {
 
     let sh = &handshake[4..4 + hs_len];
     let tls_version = u16::from_be_bytes([sh[0], sh[1]]);
-    let cipher_suite = u16::from_be_bytes([sh[34], sh[35]]);
+
+    // Session ID 长度可变 — cipher suite 偏移量取决于 session_id_len
+    let session_id_len = sh[34] as usize;
+    if 35 + session_id_len + 2 > sh.len() {
+        return None;
+    }
+    // cipher suite = sh[35 + session_id_len .. 37 + session_id_len]
+    let cipher_suite = u16::from_be_bytes([sh[35 + session_id_len], sh[36 + session_id_len]]);
 
     // For JA3S: version,ciphersuite;extensions
-    let mut pos = 36 + 1 + sh[36] as usize; // version + random + session_id
+    // Skip: version(2) + random(32) + sid_len(1) + sid(n) + cipher(2) + compression(1)
+    let mut pos = 38 + session_id_len;
     if pos + 2 > sh.len() {
         let raw = format!("{},{};", tls_version, cipher_suite);
         let hash = hex::encode(Sha256::digest(raw.as_bytes()));

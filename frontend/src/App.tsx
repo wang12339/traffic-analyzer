@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { ConfigProvider, Layout, Menu, Typography, Select, Tag } from 'antd';
 import {
   DashboardOutlined, RadarChartOutlined, AppstoreOutlined,
-  WechatOutlined, LinkOutlined,
+  WechatOutlined, LinkOutlined, WarningOutlined,
   SettingOutlined, ClockCircleOutlined,
   GlobalOutlined, MenuFoldOutlined, MenuUnfoldOutlined,
   SafetyOutlined,
@@ -17,6 +17,7 @@ import { InsightsBoard } from './components/InsightsBoard';
 import { OverviewFull } from './components/OverviewFull';
 import { AppView } from './components/AppView';
 import { DeviceDetail } from './components/DeviceDetail';
+import { AlertsView } from './components/AlertsView';
 import { HttpView } from './components/HttpView';
 import { AdminPanel } from './components/AdminPanel';
 import { TimelineView } from './components/TimelineView';
@@ -26,7 +27,7 @@ import { WeChatAnalysis } from './components/WeChatAnalysis';
 const { Header, Sider, Content } = Layout;
 const { Text } = Typography;
 
-type TabKey = 'dashboard' | 'insights' | 'overview' | 'apps' | 'wechat' | 'http' | 'timeline' | 'geo' | 'admin';
+type TabKey = 'dashboard' | 'insights' | 'overview' | 'apps' | 'alerts' | 'wechat' | 'http' | 'timeline' | 'geo' | 'admin';
 
 const menuItems = [
   { key: 'dashboard', icon: <DashboardOutlined />, label: '仪表盘' },
@@ -34,6 +35,7 @@ const menuItems = [
   { key: 'overview', icon: <SafetyOutlined />, label: '全景' },
   { key: 'timeline', icon: <ClockCircleOutlined />, label: '时间线' },
   { key: 'apps', icon: <AppstoreOutlined />, label: '应用' },
+  { key: 'alerts', icon: <WarningOutlined />, label: '告警' },
   { key: 'wechat', icon: <WechatOutlined />, label: '微信' },
   { key: 'geo', icon: <GlobalOutlined />, label: '地图' },
   { key: 'http', icon: <LinkOutlined />, label: 'TLS/SNI' },
@@ -42,11 +44,30 @@ const menuItems = [
 
 export default function App() {
   const [tab, setTab] = useState<TabKey>('dashboard');
-  const [since, setSince] = useState('30m');
+  const [since, setSince] = useState('24h');
   const [collapsed, setCollapsed] = useState(false);
   const [detailIp, setDetailIp] = useState<string | null>(null);
   const [uptime, setUptime] = useState(0);
+  const [apiKeyInput, setApiKeyInput] = useState(sessionStorage.getItem('api_key') || '');
+  const [showKeyPrompt, setShowKeyPrompt] = useState(false);
   const stats = useApi(() => getStats(since), [since], { interval: 8000 });
+
+  // 检测认证状态，未登录时弹出 Key 输入框
+  useEffect(() => {
+    if (stats.error?.includes('401') || stats.error?.includes('403') || stats.error?.includes('invalid api key')) {
+      setShowKeyPrompt(true);
+    }
+  }, [stats.error]);
+
+  const handleSetApiKey = () => {
+    const key = apiKeyInput.trim();
+    if (key) {
+      sessionStorage.setItem('api_key', key);
+      setShowKeyPrompt(false);
+      // 强制刷新页面让所有请求带上新 key
+      window.location.reload();
+    }
+  };
 
   useEffect(() => {
     const fetchUptime = () => {
@@ -80,6 +101,7 @@ export default function App() {
       case 'insights': return <InsightsBoard onDeviceClick={handleDeviceClick} />;
       case 'overview': return <OverviewFull />;
       case 'apps': return <AppView since={since} />;
+      case 'alerts': return <AlertsView />;
       case 'wechat': return <WeChatAnalysis />;
       case 'http': return <HttpView />;
       case 'timeline': return <TimelineView />;
@@ -88,6 +110,49 @@ export default function App() {
       default: return <DashboardPage />;
     }
   };
+
+  // API Key 输入弹窗
+  const keyPromptOverlay = showKeyPrompt ? (
+    <div style={{
+      position: 'fixed', inset: 0, zIndex: 9999,
+      background: 'rgba(7,10,30,0.95)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+    }}>
+      <div style={{
+        background: '#131842', borderRadius: 16, padding: 32,
+        border: '1px solid #1e3a8a', maxWidth: 400, width: '90%',
+      }}>
+        <h2 style={{ color: '#e0e8ff', marginBottom: 8, fontSize: 18 }}>认证</h2>
+        <p style={{ color: '#8892c0', fontSize: 13, marginBottom: 20 }}>
+          请输入 API Key 以访问流量分析系统
+        </p>
+        <input
+          type="password"
+          value={apiKeyInput}
+          onChange={e => setApiKeyInput(e.target.value)}
+          onKeyDown={e => e.key === 'Enter' && handleSetApiKey()}
+          placeholder="输入 API Key"
+          style={{
+            width: '100%', padding: '10px 14px', borderRadius: 8,
+            border: '1px solid #1e3a8a', background: '#0a0e27',
+            color: '#e0e8ff', fontSize: 14, outline: 'none',
+            boxSizing: 'border-box', marginBottom: 16,
+          }}
+          autoFocus
+        />
+        <button
+          onClick={handleSetApiKey}
+          style={{
+            width: '100%', padding: '10px', borderRadius: 8,
+            border: 'none', background: '#6366f1', color: '#fff',
+            fontSize: 14, fontWeight: 600, cursor: 'pointer',
+          }}
+        >
+          确认
+        </button>
+      </div>
+    </div>
+  ) : null;
 
   const statusColor = stats.error ? 'red' : stats.data ? 'green' : 'yellow';
   const statusText = stats.error ? '连接异常' : stats.data ? '运行中' : '连接中...';
@@ -219,6 +284,7 @@ export default function App() {
           </Content>
         </Layout>
       </Layout>
+      {keyPromptOverlay}
     </ConfigProvider>
   );
 }

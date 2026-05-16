@@ -37,15 +37,18 @@ export function useApi<T>(
     }
   }, deps); // eslint-disable-line
 
+  // 用原始类型做 deps，避免 options 对象引用变化触发无限重渲染
+  const interval = options?.interval;
+
   useEffect(() => {
     load();
-    if (options?.interval && options.interval > 0) {
-      intervalRef.current = setInterval(load, options.interval);
+    if (interval && interval > 0) {
+      intervalRef.current = setInterval(load, interval);
       return () => {
         if (intervalRef.current) clearInterval(intervalRef.current);
       };
     }
-  }, [load, options?.interval]);
+  }, [load, interval]);
 
   return { data, loading, error, refetch: load };
 }

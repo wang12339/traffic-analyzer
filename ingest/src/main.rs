@@ -7,10 +7,11 @@ mod redis_parser;
 mod storage;
 mod tcp_reasm;
 mod tls_parser;
+mod anomaly;
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime};
 
 use anyhow::{Context, Result};
 use clap::Parser;
@@ -20,7 +21,7 @@ use tokio::sync::mpsc;
 use tokio::time::sleep;
 use tracing::{error, info, warn};
 use tracing_subscriber::EnvFilter;
-use traffic_core::PacketFrame;
+use traffic_core::{now_ns, PacketFrame};
 
 use flow_agg::ShardedFlowAggregator;
 use storage::ClickStore;
@@ -40,25 +41,15 @@ struct Args {
 
     #[arg(long, default_value = "traffic")]
     db_name: String,
-}
 
-fn now_ns() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_nanos() as u64
+    #[arg(short = 'u', long, default_value = "2055")]
+    udp_port: u16,
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
     tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::from_default_env().add_directive(
-            if std::env::var("RUST_LOG").is_ok() {
-                tracing::Level::TRACE.into()
-            } else {
-                tracing::Level::INFO.into()
-            },
-        ))
+        .with_env_filter(EnvFilter::from_default_env().add_directive(tracing::Level::INFO.into()))
         .with_target(false)
         .init();
 
@@ -82,7 +73,8 @@ async fn main() -> Result<()> {
     let store = Arc::new(store);
 
     // UDP compatibility socket (receives JSON flow records from Python agent)
-    let udp_sock = tokio::net::UdpSocket::bind("0.0.0.0:2055").await?;
+    let udp_addr = format!("0.0.0.0:{}", args.udp_port);
+    let udp_sock = tokio::net::UdpSocket::bind(&udp_addr).await?;
     let store_udp = store.clone();
     let run_udp = running.clone();
     tokio::spawn(async move {
@@ -134,6 +126,7 @@ async fn main() -> Result<()> {
                     let tx = accept_tx.clone();
                     let agent_id = addr.to_string();
                     tokio::spawn(async move {
+                        const MAX_MSG_LEN: usize = 10 * 1024 * 1024; // 10MB 安全上限
                         let mut buf = Vec::with_capacity(8192);
                         let mut len_buf = [0u8; 4];
                         loop {
@@ -142,6 +135,10 @@ async fn main() -> Result<()> {
                                 return;
                             }
                             let msg_len = u32::from_le_bytes(len_buf) as usize;
+                            if msg_len > MAX_MSG_LEN {
+                                warn!("Agent {} oversize msg ({} > {}), drop", agent_id, msg_len, MAX_MSG_LEN);
+                                return;
+                            }
                             buf.resize(msg_len, 0);
                             if stream.read_exact(&mut buf).await.is_err() {
                                 return;
@@ -149,10 +146,22 @@ async fn main() -> Result<()> {
                             match bincode::deserialize::<Vec<PacketFrame>>(&buf) {
                                 Ok(frames) => {
                                     for f in frames {
-                                        // Non-blocking send: 丢弃超载帧而非阻塞 agent
-                                        if let Err(e) = tx.try_send((agent_id.clone(), f)) {
-                                            warn!("Ingest channel full, dropping frame: {}", e);
-                                            break; // 停止处理此批，避免更多丢弃
+                                        // try_send: channel 满时丢帧而非阻塞 agent TCP 连接
+                                        // 背压由内核 TCP buffer 自然处理
+                                        use tokio::sync::mpsc::error::TrySendError;
+                                        match tx.try_send((agent_id.clone(), f)) {
+                                            Err(TrySendError::Full(_)) => {
+                                                static DROP_COUNT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+                                                let c = DROP_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                                                if c % 1000 == 0 {
+                                                    warn!("Ingest channel full, dropped {} frames", c + 1000);
+                                                }
+                                            }
+                                            Err(TrySendError::Closed(_)) => {
+                                                warn!("Agent send channel closed");
+                                                return;
+                                            }
+                                            _ => {}
                                         }
                                     }
                                 }

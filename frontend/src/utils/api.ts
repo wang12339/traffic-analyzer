@@ -160,3 +160,70 @@ export function getTrends(since = '24h'): Promise<TrendRecord[]> {
 export function getDeviceDetail(ip: string): Promise<any[]> {
   return fetchApi(`/device/${encodeURIComponent(ip)}`);
 }
+
+// ─── Anomaly Detection API ───
+
+export interface AnomalyEvent {
+  timestamp: string;
+  src_ip: string;
+  src_mac: string;
+  risk_score: number;
+  reason: string;
+  details: string;
+  resolved: number;
+}
+
+export interface AnomalyResponse {
+  summary: {
+    total: number;
+    avg_risk: number;
+    max_risk: number;
+    affected_devices: number;
+  };
+  events: AnomalyEvent[];
+}
+
+export interface InsightsData {
+  summary: {
+    active_devices: number;
+    high_risk_devices: number;
+    os_breakdown: Record<string, number>;
+    total_alerts: number;
+  };
+  devices: any[];
+  alerts: any[];
+}
+
+export function getInsights(): Promise<InsightsData> {
+  return fetchApi('/insights');
+}
+
+export function getAnomalies(): Promise<AnomalyResponse> {
+  return fetchApi('/anomalies');
+}
+
+export interface AlertResponse {
+  anomaly_alerts: AnomalyEvent[];
+  traffic_alerts: any[];
+  total: number;
+}
+
+export function getAlerts(): Promise<AlertResponse> {
+  return fetchApi('/alerts');
+}
+
+export function resolveDeviceAlerts(ip: string): Promise<{ resolved: boolean; ip: string }> {
+  return fetchApi(`/anomalies/${encodeURIComponent(ip)}/resolve`, { method: 'POST' });
+}
+
+export function getTopology(): Promise<any[]> {
+  return fetchApi('/topology');
+}
+
+export function getTimeline(): Promise<any> {
+  return fetchApi('/timeline');
+}
+
+export function getWeChatAnalysis(): Promise<any> {
+  return fetchApi('/analysis/wechat');
+}

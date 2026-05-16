@@ -8,7 +8,9 @@ use actix_web::middleware::Next;
 use actix_web::{middleware, web, App, HttpResponse, HttpServer};
 use clap::Parser;
 use reqwest::Client as HttpClient;
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Mutex;
 use tracing::{info, warn};
 use tracing_subscriber::EnvFilter;
 use utoipa::OpenApi;
@@ -16,16 +18,52 @@ use utoipa_swagger_ui::SwaggerUi;
 
 use routes::AppState;
 
-/// 认证中间件：API_KEY 环境变量设置时检查 X-API-Key 头部
+/// 日志中间件：给每个请求分配 trace ID，记录方法和耗时。
+async fn tracing_middleware<B: MessageBody + 'static>(
+    req: ServiceRequest,
+    next: Next<B>,
+) -> Result<ServiceResponse<B>, actix_web::Error> {
+    let method = req.method().to_string();
+    let path = req.path().to_string();
+    let request_id = uuid::Uuid::new_v4().to_string();
+    let start = std::time::Instant::now();
+
+    // Capture AppState from the request before consuming it
+    let state = req.app_data::<web::Data<AppState>>().cloned();
+
+    let span = tracing::info_span!("request", request_id = %request_id, method = %method, path = %path);
+    let _guard = span.enter();
+
+    let res = next.call(req).await?;
+    let status = res.status().as_u16();
+    let duration_ms = start.elapsed().as_secs_f64() * 1000.0;
+    info!("{} {} -> {} ({:.1}ms)", method, path, status, duration_ms);
+
+    // Update metrics
+    if let Some(s) = &state {
+        s.total_requests.fetch_add(1, Ordering::Relaxed);
+        if let Ok(mut pc) = s.path_counts.lock() {
+            *pc.entry(path).or_insert(0) += 1;
+        }
+    }
+
+    Ok(res)
+}
+
+/// 认证中间件：API_KEY 环境变量设置时检查 X-API-Key 头部。
 async fn auth_middleware<B: MessageBody + 'static>(
     req: ServiceRequest,
     next: Next<B>,
 ) -> Result<ServiceResponse<B>, actix_web::Error> {
     let api_key = req
-        .app_data::<web::Data<Arc<AppState>>>()
+        .app_data::<web::Data<AppState>>()
         .map(|d| d.api_key.clone())
         .unwrap_or_default();
-    if api_key.is_empty() || req.path() == "/api/health" || req.path().starts_with("/api/docs/") {
+    // 免认证路径：健康检查、API 文档。所有来源均需认证（不再对 loopback 放行）。
+    if api_key.is_empty()
+        || req.path() == "/api/health"
+        || req.path().starts_with("/api/docs/")
+    {
         return next.call(req).await;
     }
     let key = req
@@ -36,6 +74,12 @@ async fn auth_middleware<B: MessageBody + 'static>(
     if key == api_key {
         return next.call(req).await;
     }
+    warn!(
+        "Auth failure: method={}, path={}, peer={:?}",
+        req.method(),
+        req.path(),
+        req.peer_addr(),
+    );
     let res = HttpResponse::Unauthorized()
         .json(serde_json::json!({"success": false, "error": "invalid api key"}));
     Err(actix_web::error::InternalError::from_response("", res).into())
@@ -54,14 +98,26 @@ async fn main() -> anyhow::Result<()> {
     let http = HttpClient::builder()
         .timeout(std::time::Duration::from_secs(10))
         .build()?;
-    let state = Arc::new(AppState {
+    // Require API_KEY: default to a random key (logged at startup) instead of empty.
+    // Set API_KEY env var explicitly to use a known value.
+    let api_key = std::env::var("API_KEY").unwrap_or_else(|_| {
+        let key = uuid::Uuid::new_v4().to_string();
+        info!("No API_KEY set — generated random key for this session: {}", key);
+        info!("Set API_KEY env var to use a persistent key (e.g. export API_KEY=my-key)");
+        key
+    });
+    let state = web::Data::new(AppState {
         http,
         ch_url: args.clickhouse,
         database: args.db_name,
-        api_key: std::env::var("API_KEY").unwrap_or_default(),
+        api_key,
         started_at: chrono::Utc::now(),
+        resolved_ips: std::sync::Mutex::new(std::collections::HashSet::new()),
+        total_requests: AtomicU64::new(0),
+        path_counts: Mutex::new(HashMap::new()),
+        ch_errors: AtomicU64::new(0),
     });
-    match ch_one::<serde_json::Value>(&state, "SELECT 1 as v").await {
+    match ch_one::<serde_json::Value>(&*state, "SELECT 1 as v").await {
         Ok(_) => info!("CH OK"),
         Err(e) => warn!("CH: {}", e),
     }
@@ -84,25 +140,25 @@ async fn main() -> anyhow::Result<()> {
             }
             c
         } else {
-            // 开发模式默认宽松（可通过设置 ALLOWED_ORIGINS 环境变量限制）
+            warn!("ALLOWED_ORIGINS not set — CORS denied by default. Set ALLOWED_ORIGINS env var (comma-separated) to allow cross-origin requests.");
             Cors::default()
-                .allow_any_origin()
                 .allow_any_method()
                 .allow_any_header()
                 .max_age(3600)
         };
         App::new()
             .wrap(cors)
+            .wrap(middleware::from_fn(tracing_middleware))
             .wrap(middleware::from_fn(auth_middleware))
             .wrap(Governor::new(&rate_limiter))
-            .wrap(middleware::Logger::default())
-            .app_data(web::Data::new(state.clone()))
+            .app_data(state.clone())
             // Health & status
             .route("/api/health", web::get().to(analysis::health))
             .route(
                 "/api/admin/status",
                 web::get().to(analysis::get_admin_status),
             )
+            .route("/api/metrics", web::get().to(analysis::get_metrics))
             // Data queries
             .route("/api/stats", web::get().to(queries::get_stats))
             .route("/api/flows", web::get().to(queries::get_flows))
@@ -144,6 +200,8 @@ async fn main() -> anyhow::Result<()> {
             .route("/api/topology", web::get().to(analysis::get_topology))
             .route("/api/timeline", web::get().to(analysis::get_timeline))
             .route("/api/alerts", web::get().to(analysis::get_alerts))
+            .route("/api/anomalies", web::get().to(analysis::get_anomalies))
+            .route("/api/anomalies/{ip}/resolve", web::post().to(analysis::resolve_anomalies))
             // Geo IP lookup
             .route("/api/geo-lookup", web::get().to(geo::geo_lookup))
             // Agent management

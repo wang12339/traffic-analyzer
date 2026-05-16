@@ -1,14 +1,11 @@
 import React from 'react';
+import { KpiBox, TYPE_ICONS, fmt } from './KpiBox';
 import { useApi } from '../hooks/useApi';
 import { LoadingSpinner, ErrorState } from './LoadingState';
-import { KpiBox, TYPE_ICONS, fmt } from './KpiBox';
+import { getInsights } from '../utils/api';
 
 export function InsightsBoard({ onDeviceClick }: { onDeviceClick?: (ip: string) => void }) {
-  const insights = useApi(
-    () => fetch('/api/insights').then(r => r.json()).then(j => j.success ? j.data : Promise.reject(j.error)),
-    [],
-    { interval: 8000 }
-  );
+  const insights = useApi(() => getInsights(), [], { interval: 8000 });
 
   if (insights.loading && !insights.data) return <LoadingSpinner message="加载洞见数据..." />;
   if (insights.error) return <ErrorState error={insights.error} onRetry={insights.refetch} />;

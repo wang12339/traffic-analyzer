@@ -29,6 +29,8 @@ pub struct PacketFrame {
     pub snaplen: u16,
     /// TCP flags byte (FIN=0x01, SYN=0x02, RST=0x04). 0 for non-TCP.
     pub tcp_flags: u8,
+    /// TCP sequence number (used for out-of-order reassembly). 0 if not extracted.
+    pub tcp_seq: u32,
 }
 
 // ─── Shared utility functions ───
@@ -54,6 +56,14 @@ pub fn ip_to_vec(ip: IpAddr) -> Vec<u8> {
         IpAddr::V4(v) => v.octets().to_vec(),
         IpAddr::V6(v) => v.octets().to_vec(),
     }
+}
+
+/// Current timestamp in nanoseconds since UNIX epoch.
+pub fn now_ns() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos() as u64
 }
 
 /// Format a 6-byte MAC address as `xx:xx:xx:xx:xx:xx` (lowercase hex).
@@ -165,6 +175,8 @@ pub struct FlowRecord {
 
     // Multi-engine classification verdicts (JSON array)
     pub engines: String,
+    /// Anomaly risk score (0-100). 0 = normal, 100 = critical anomaly.
+    pub risk_score: u8,
 }
 
 /// Device information sent by the agent.

@@ -178,8 +178,8 @@ pub fn parse_quic_initial(buf: &[u8]) -> Option<QuicInitial> {
 
     // Extract CRYPTO frame from the plaintext
     let sni = extract_sni_from_crypto(&plaintext);
-    if sni.is_some() {
-        tracing::debug!("QUIC: extracted SNI: {}", sni.as_ref().unwrap());
+    if let Some(ref s) = sni {
+        tracing::debug!("QUIC: extracted SNI: {}", s);
     } else {
         tracing::debug!(
             "QUIC: no SNI found in CRYPTO frame, plaintext_len={}",

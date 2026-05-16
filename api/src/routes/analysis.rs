@@ -2,6 +2,7 @@ use crate::routes::*;
 use actix_web::{web, HttpResponse};
 use serde::Serialize;
 use std::collections::{BTreeMap, HashMap, HashSet};
+use std::sync::atomic::Ordering;
 use utoipa::ToSchema;
 
 struct DeviceInsight {
@@ -42,7 +43,7 @@ pub struct DestInfo {
     ),
     tag = "Live"
 )]
-pub async fn get_live(state: web::Data<Arc<AppState>>) -> HttpResponse {
+pub async fn get_live(state: web::Data<AppState>) -> HttpResponse {
     let sql = format!(
         "SELECT src_ip,sni,dns_domain,app_name,sum(bytes_up+bytes_down) as b,any(src_mac) as m \
          FROM {}.flows WHERE timestamp>=now()-toIntervalMinute(5) AND (src_ip LIKE '192.168.%' OR src_ip LIKE '10.%' OR (ipv4StringToNum(src_ip) BETWEEN ipv4StringToNum('172.16.0.0') AND ipv4StringToNum('172.31.255.255')))
@@ -132,7 +133,7 @@ pub async fn get_live(state: web::Data<Arc<AppState>>) -> HttpResponse {
     tag = "Devices"
 )]
 pub async fn get_device_current(
-    state: web::Data<Arc<AppState>>,
+    state: web::Data<AppState>,
     path: web::Path<String>,
 ) -> HttpResponse {
     let ip = path.into_inner();
@@ -162,7 +163,7 @@ pub async fn get_device_current(
     tag = "Devices"
 )]
 pub async fn get_device_anomalies(
-    state: web::Data<Arc<AppState>>,
+    state: web::Data<AppState>,
     path: web::Path<String>,
 ) -> HttpResponse {
     let ip = path.into_inner();
@@ -217,7 +218,7 @@ pub async fn get_device_anomalies(
     tag = "Devices"
 )]
 pub async fn get_device_trends(
-    state: web::Data<Arc<AppState>>,
+    state: web::Data<AppState>,
     path: web::Path<String>,
     q: web::Query<TimeQuery>,
 ) -> HttpResponse {
@@ -253,7 +254,7 @@ pub async fn get_device_trends(
     tag = "Devices"
 )]
 pub async fn get_device_tls_fingerprints(
-    state: web::Data<Arc<AppState>>,
+    state: web::Data<AppState>,
     path: web::Path<String>,
 ) -> HttpResponse {
     let ip = path.into_inner();
@@ -274,13 +275,13 @@ pub async fn get_device_tls_fingerprints(
         ch_escape(&ip),
     );
     match tokio::join!(
-        ch_query::<serde_json::Value>(&state, &sql),
+        ch_query::<TlsFingerprintRow>(&state, &sql),
         ch_one::<serde_json::Value>(&state, &count_sql),
     ) {
-        (Ok(rows), Ok(count)) => HttpResponse::Ok().json(ApiResponse::ok(serde_json::json!({
-            "distinct_signatures": count["distinct_sigs"],
-            "fingerprints": rows,
-        }))),
+        (Ok(rows), Ok(count)) => HttpResponse::Ok().json(ApiResponse::ok(TlsFingerprintResponse {
+            distinct_signatures: count["distinct_sigs"].as_u64().unwrap_or(0),
+            fingerprints: rows,
+        })),
         (Err(e), _) | (_, Err(e)) => HttpResponse::InternalServerError().json(api_err(&e)),
     }
 }
@@ -297,7 +298,7 @@ pub async fn get_device_tls_fingerprints(
     tag = "Devices"
 )]
 pub async fn get_device_detail(
-    state: web::Data<Arc<AppState>>,
+    state: web::Data<AppState>,
     path: web::Path<String>,
 ) -> HttpResponse {
     let ip = path.into_inner();
@@ -323,7 +324,7 @@ pub async fn get_device_detail(
     ),
     tag = "Analysis"
 )]
-pub async fn get_insights(state: web::Data<Arc<AppState>>) -> HttpResponse {
+pub async fn get_insights(state: web::Data<AppState>) -> HttpResponse {
     let sql = format!(
         "SELECT src_ip,app_name,sni,dns_domain,src_mac,sum(bytes_up+bytes_down) as bytes,count() as flows \
          FROM {}.flows WHERE timestamp>=now()-toIntervalMinute(5) AND (src_ip LIKE '192.168.%' OR src_ip LIKE '10.%')
@@ -495,7 +496,7 @@ pub async fn get_insights(state: web::Data<Arc<AppState>>) -> HttpResponse {
     ),
     tag = "Analysis"
 )]
-pub async fn get_wechat_analysis(state: web::Data<Arc<AppState>>) -> HttpResponse {
+pub async fn get_wechat_analysis(state: web::Data<AppState>) -> HttpResponse {
     let db = &state.database;
     let day = "now()-toIntervalDay(1)";
     let wc = "(app_name='WeChat' OR app_name='微信')";
@@ -573,12 +574,12 @@ pub async fn get_wechat_analysis(state: web::Data<Arc<AppState>>) -> HttpRespons
     ),
     tag = "Analysis"
 )]
-pub async fn get_http_sessions(state: web::Data<Arc<AppState>>) -> HttpResponse {
+pub async fn get_http_sessions(state: web::Data<AppState>) -> HttpResponse {
     let sql = format!(
         "SELECT timestamp,host,method,path,status_code,content_type,content_length,user_agent          FROM {}.http_sessions ORDER BY timestamp DESC LIMIT 100",
         state.database
     );
-    match ch_query::<serde_json::Value>(&state, &sql).await {
+    match ch_query::<HttpSessionRow>(&state, &sql).await {
         Ok(rows) => HttpResponse::Ok().json(ApiResponse::ok(rows)),
         Err(e) => HttpResponse::InternalServerError().json(api_err(&e)),
     }
@@ -592,12 +593,12 @@ pub async fn get_http_sessions(state: web::Data<Arc<AppState>>) -> HttpResponse 
     ),
     tag = "Analysis"
 )]
-pub async fn get_topology(state: web::Data<Arc<AppState>>) -> HttpResponse {
+pub async fn get_topology(state: web::Data<AppState>) -> HttpResponse {
     let sql = format!(
         "SELECT src_ip,dst_ip,app_name,count() as w,sum(bytes_up+bytes_down) as b          FROM {}.flows WHERE timestamp>=now()-toIntervalHour(1) AND src_ip LIKE '192.168.%'          AND dst_port IN (80,443,8080)         GROUP BY src_ip,dst_ip,app_name ORDER BY b DESC LIMIT 200",
         state.database
     );
-    match ch_query::<serde_json::Value>(&state, &sql).await {
+    match ch_query::<TopologyRow>(&state, &sql).await {
         Ok(rows) => HttpResponse::Ok().json(ApiResponse::ok(rows)),
         Err(e) => HttpResponse::InternalServerError().json(api_err(&e)),
     }
@@ -612,7 +613,7 @@ pub async fn get_topology(state: web::Data<Arc<AppState>>) -> HttpResponse {
     ),
     tag = "Analysis"
 )]
-pub async fn get_timeline(state: web::Data<Arc<AppState>>) -> HttpResponse {
+pub async fn get_timeline(state: web::Data<AppState>) -> HttpResponse {
     let sql1 = format!(
         "SELECT toHour(timestamp) as h,app_name,count() as c          FROM {}.flows WHERE timestamp>=now()-toIntervalDay(1)          AND app_name!='' AND app_name!='Unknown'          GROUP BY h,app_name ORDER BY h,c DESC",
         state.database
@@ -622,13 +623,14 @@ pub async fn get_timeline(state: web::Data<Arc<AppState>>) -> HttpResponse {
         state.database
     );
     let (r1, r2) = tokio::join!(
-        crate::ch_query::<serde_json::Value>(&state, &sql1),
-        crate::ch_query::<serde_json::Value>(&state, &sql2),
+        crate::ch_query::<HourlyAppRow>(&state, &sql1),
+        crate::ch_query::<TimelineSiteRow>(&state, &sql2),
     );
     match (r1, r2) {
-        (Ok(apps), Ok(sites)) => HttpResponse::Ok().json(ApiResponse::ok(serde_json::json!({
-            "hourly_apps": apps, "visited_sites": sites,
-        }))),
+        (Ok(apps), Ok(sites)) => HttpResponse::Ok().json(ApiResponse::ok(TimelineResponse {
+            hourly_apps: apps,
+            visited_sites: sites,
+        })),
         _ => HttpResponse::InternalServerError().json(api_err("timeline failed")),
     }
 }
@@ -637,19 +639,104 @@ pub async fn get_timeline(state: web::Data<Arc<AppState>>) -> HttpResponse {
     get,
     path = "/api/alerts",
     responses(
-        (status = 200, description = "Active alerts"),
+        (status = 200, description = "Active alerts from anomaly detection engine"),
     ),
     tag = "Analysis"
 )]
-pub async fn get_alerts(state: web::Data<Arc<AppState>>) -> HttpResponse {
-    let sql = format!(
+pub async fn get_alerts(state: web::Data<AppState>) -> HttpResponse {
+    let anomaly_sql = format!(
+        "SELECT src_ip,src_mac,risk_score,reason,details,timestamp          FROM {}.anomaly_alerts WHERE timestamp>=now()-toIntervalDay(1)          ORDER BY risk_score DESC, timestamp DESC LIMIT 50",
+        state.database
+    );
+    let traffic_sql = format!(
         "SELECT src_ip,count(DISTINCT sni)+count(DISTINCT dns_domain) as dests,         countDistinct(app_name) as apps,sum(bytes_up+bytes_down) as bytes          FROM {}.flows WHERE timestamp>=now()-toIntervalHour(1)          AND src_ip LIKE '192.168.%'          GROUP BY src_ip HAVING dests>10 OR bytes>10000000 ORDER BY bytes DESC LIMIT 20",
         state.database
     );
-    match ch_query::<serde_json::Value>(&state, &sql).await {
-        Ok(rows) => HttpResponse::Ok().json(ApiResponse::ok(rows)),
-        Err(e) => HttpResponse::InternalServerError().json(api_err(&e)),
+    match tokio::join!(
+        ch_query::<AnomalyAlertRow>(&state, &anomaly_sql),
+        ch_query::<TrafficAlertRow>(&state, &traffic_sql),
+    ) {
+        (Ok(anomalies), Ok(traffic)) => {
+            let total = anomalies.len() + traffic.len();
+            HttpResponse::Ok().json(ApiResponse::ok(AlertsResponse {
+                anomaly_alerts: anomalies,
+                traffic_alerts: traffic,
+                total,
+            }))
+        }
+        (Err(e), _) | (_, Err(e)) => HttpResponse::InternalServerError().json(api_err(&e)),
     }
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/anomalies",
+    responses(
+        (status = 200, description = "Anomaly events from behavioral engine"),
+    ),
+    tag = "Analysis"
+)]
+pub async fn get_anomalies(state: web::Data<AppState>) -> HttpResponse {
+    let since = "now()-toIntervalDay(1)";
+    let sql = format!(
+        "SELECT timestamp,src_ip,src_mac,risk_score,reason,details,resolved          FROM {}.anomaly_alerts WHERE timestamp>={}          ORDER BY risk_score DESC, timestamp DESC LIMIT 100",
+        state.database, since
+    );
+    let summary_sql = format!(
+        "SELECT count() as total,avg(risk_score) as avg_risk,max(risk_score) as max_risk,          countDistinct(src_ip) as affected_devices          FROM {}.anomaly_alerts WHERE timestamp>={}",
+        state.database, since
+    );
+    let resolved: std::collections::HashSet<String> = state.resolved_ips.lock()
+        .map(|r| r.clone())
+        .unwrap_or_default();
+    match tokio::join!(
+        ch_query::<AnomalyEventRow>(&state, &sql),
+        ch_one::<serde_json::Value>(&state, &summary_sql),
+    ) {
+        (Ok(mut events), Ok(summary)) => {
+            // Filter out resolved IPs from events
+            if !resolved.is_empty() {
+                events.retain(|e| {
+                    !resolved.contains(&e.src_ip)
+                });
+            }
+            HttpResponse::Ok().json(ApiResponse::ok(AnomalyResponse {
+                summary: AnomalySummary {
+                    total: summary["total"].as_u64().unwrap_or(0),
+                    avg_risk: summary["avg_risk"].as_f64().unwrap_or(0.0),
+                    max_risk: summary["max_risk"].as_u64().unwrap_or(0),
+                    affected_devices: summary["affected_devices"].as_u64().unwrap_or(0),
+                },
+                events,
+            }))
+        }
+        (Err(e), _) | (_, Err(e)) => HttpResponse::InternalServerError().json(api_err(&e)),
+    }
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/anomalies/{ip}/resolve",
+    params(
+        ("ip" = String, Path, description = "Device IP to resolve all alerts for"),
+    ),
+    responses(
+        (status = 200, description = "Alerts resolved"),
+    ),
+    tag = "Analysis"
+)]
+pub async fn resolve_anomalies(
+    state: web::Data<AppState>,
+    path: web::Path<String>,
+) -> HttpResponse {
+    let ip = path.into_inner();
+    if let Ok(mut resolved) = state.resolved_ips.lock() {
+        resolved.insert(ip.clone());
+    }
+    HttpResponse::Ok().json(ApiResponse::ok(ResolveResponse {
+        resolved: true,
+        ip,
+    }))
 }
 
 #[utoipa::path(
@@ -661,15 +748,15 @@ pub async fn get_alerts(state: web::Data<Arc<AppState>>) -> HttpResponse {
     ),
     tag = "Health"
 )]
-pub async fn health(state: web::Data<Arc<AppState>>) -> HttpResponse {
+pub async fn health(state: web::Data<AppState>) -> HttpResponse {
     let sql = format!(
         "SELECT count() as total_flows,0 as total_bytes,0 as apps,0 as devices,0 as snis,0 as domains,0 as fps,0 as tcp_flows,0 as udp_flows,0 as throughput_mbps FROM {}.flows",
         state.database
     );
     match ch_one::<StatsRow>(&state, &sql).await {
-        Ok(r) => HttpResponse::Ok().json(serde_json::json!({"status":"ok","flows":r.total_flows})),
+        Ok(r) => HttpResponse::Ok().json(HealthResponse { status: "ok".into(), flows: r.total_flows, message: None }),
         Err(e) => HttpResponse::ServiceUnavailable()
-            .json(serde_json::json!({"status":"error","message":e})),
+            .json(HealthResponse { status: "error".into(), flows: 0, message: Some(e) }),
     }
 }
 
@@ -681,7 +768,7 @@ pub async fn health(state: web::Data<Arc<AppState>>) -> HttpResponse {
     ),
     tag = "Admin"
 )]
-pub async fn get_admin_status(state: web::Data<Arc<AppState>>) -> HttpResponse {
+pub async fn get_admin_status(state: web::Data<AppState>) -> HttpResponse {
     let uptime = (chrono::Utc::now() - state.started_at).num_seconds().max(0);
     let sql_f = format!(
         "SELECT count() as c, max(timestamp) as t FROM {}.flows",
@@ -703,4 +790,32 @@ pub async fn get_admin_status(state: web::Data<Arc<AppState>>) -> HttpResponse {
         resp["http_sessions"] = h["c"].clone();
     }
     HttpResponse::Ok().json(ApiResponse::ok(resp))
+}
+
+/// Prometheus-style metrics endpoint.
+pub async fn get_metrics(state: web::Data<AppState>) -> HttpResponse {
+    let uptime = (chrono::Utc::now() - state.started_at).num_seconds().max(0);
+    let total = state.total_requests.load(Ordering::Relaxed);
+    let path_counts = state.path_counts.lock().map(|pc| pc.clone()).unwrap_or_default();
+    let ch_errors = state.ch_errors.load(Ordering::Relaxed);
+
+    let mut body = String::new();
+    body.push_str("# HELP traffic_api_uptime_seconds API uptime\n");
+    body.push_str("# TYPE traffic_api_uptime_seconds gauge\n");
+    body.push_str(&format!("traffic_api_uptime_seconds {}\n", uptime));
+    body.push_str("# HELP traffic_api_requests_total Total API requests\n");
+    body.push_str("# TYPE traffic_api_requests_total counter\n");
+    body.push_str(&format!("traffic_api_requests_total {}\n", total));
+    body.push_str("# HELP traffic_api_requests_by_path Requests by path\n");
+    body.push_str("# TYPE traffic_api_requests_by_path counter\n");
+    for (path, count) in &path_counts {
+        body.push_str(&format!("traffic_api_requests_by_path{{path=\"{}\"}} {}\n", path, count));
+    }
+    body.push_str("# HELP traffic_api_ch_errors_total ClickHouse query errors\n");
+    body.push_str("# TYPE traffic_api_ch_errors_total counter\n");
+    body.push_str(&format!("traffic_api_ch_errors_total {}\n", ch_errors));
+
+    HttpResponse::Ok()
+        .content_type("text/plain; charset=utf-8")
+        .body(body)
 }

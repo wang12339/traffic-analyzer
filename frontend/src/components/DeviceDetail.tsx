@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
+import React, { useEffect, useState, useCallback } from 'react';
+import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, BarChart, Bar, Cell } from 'recharts';
 import { TYPE_ICONS, fmt } from './KpiBox';
 
 export function DeviceDetail({ ip, onBack }: { ip: string; onBack: () => void }) {
@@ -9,6 +9,8 @@ export function DeviceDetail({ ip, onBack }: { ip: string; onBack: () => void })
   const [trends, setTrends] = useState<any[]>([]);
   const [appBreakdown, setAppBreakdown] = useState<any[]>([]);
   const [tlsFingerprints, setTlsFingerprints] = useState<any>(null);
+  const [deviceAnomalyEvents, setDeviceAnomalyEvents] = useState<any[]>([]);
+  const [resolving, setResolving] = useState(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -20,7 +22,8 @@ export function DeviceDetail({ ip, onBack }: { ip: string; onBack: () => void })
       fetch(`/api/device/${ip}`).then(r=>r.json()),
       fetch(`/api/device/${ip}/trends?since=2h`).then(r=>r.json()),
       fetch(`/api/device/${ip}/tls-fingerprints`).then(r=>r.json()),
-    ]).then(([ins, cur, anm, det, trd, tls]) => {
+      fetch(`/api/anomalies`).then(r=>r.json()),
+    ]).then(([ins, cur, anm, det, trd, tls, allAnm]) => {
       if (ins.success) {
         const dev = ins.data.devices?.find((d: any) => d.ip === ip);
         if (dev) setProfile(dev);
@@ -46,8 +49,26 @@ export function DeviceDetail({ ip, onBack }: { ip: string; onBack: () => void })
         setAppBreakdown(Object.entries(appMap).map(([k,v]) => ({name:k, ...v})).sort((a,b)=>b.bytes-a.bytes));
       }
       if (tls.success) setTlsFingerprints(tls.data);
+      // Filter anomaly events for this device
+      if (allAnm.success && allAnm.data?.events) {
+        setDeviceAnomalyEvents(
+          allAnm.data.events.filter((e: any) => e.src_ip === ip)
+        );
+      }
       setLoading(false);
     }).catch(() => setLoading(false));
+  }, [ip]);
+
+  const handleResolve = useCallback(async () => {
+    setResolving(true);
+    try {
+      const resp = await fetch(`/api/anomalies/${ip}/resolve`, { method: 'POST' });
+      const j = await resp.json();
+      if (j.success) {
+        setDeviceAnomalyEvents([]);
+      }
+    } catch { /* ignore */ }
+    setResolving(false);
   }, [ip]);
 
   if (loading) return <div style={{padding:60, textAlign:'center', color:'var(--text-secondary)'}}>加载设备数据...</div>;
@@ -128,16 +149,59 @@ export function DeviceDetail({ ip, onBack }: { ip: string; onBack: () => void })
         </div>
 
         <div style={{background:'var(--bg-card)', borderRadius:12, border:'1px solid var(--border)', padding:16}}>
-          <h3 style={{fontSize:14, fontWeight:600, marginBottom:10}}>异常检测</h3>
+          <h3 style={{fontSize:14, fontWeight:600, marginBottom:10, display:'flex', alignItems:'center', gap:8}}>
+            异常检测
+            {deviceAnomalyEvents.length > 0 && (
+              <button
+                onClick={handleResolve}
+                disabled={resolving}
+                style={{
+                  marginLeft:'auto', background:'transparent', border:'1px solid var(--border)',
+                  borderRadius:6, padding:'2px 10px', fontSize:11, cursor:'pointer',
+                  color: resolving ? 'var(--text-secondary)' : 'var(--warning)',
+                }}
+              >
+                {resolving ? '处理中...' : '忽略告警'}
+              </button>
+            )}
+          </h3>
           <div style={{marginBottom:10}}>
             <div style={{fontSize:12, color:'var(--text-secondary)', marginBottom:4}}>行为偏离度</div>
             <div style={{height:8, background:'var(--bg-hover)', borderRadius:4, overflow:'hidden'}}>
-              {(profile?.risk_score || 0) > 0 && <div style={{height:'100%', width:`${Math.min(profile?.risk_score||0,100)}%`, background:'var(--danger)', borderRadius:4}} />}
+              {(profile?.risk_score || 0) > 0 && (
+                <div style={{height:'100%', width:`${Math.min(profile?.risk_score||0,100)}%`, background: (profile?.risk_score||0) > 50 ? 'var(--danger)' : 'var(--warning)', borderRadius:4}} />
+              )}
             </div>
             <div style={{fontSize:13, fontWeight:600, marginTop:2, color: (profile?.risk_score||0) > 50 ? 'var(--danger)' : 'var(--text-secondary)'}}>
               风险评分 {profile?.risk_score || 0}/100
             </div>
           </div>
+          {/* Anomaly events for this device */}
+          {deviceAnomalyEvents.length > 0 && (
+            <div style={{marginBottom:8}}>
+              <div style={{fontSize:12, color:'var(--text-secondary)', marginBottom:4}}>告警历史 ({deviceAnomalyEvents.length}条)</div>
+              {deviceAnomalyEvents.slice(0, 5).map((e: any, i: number) => {
+                const ec = e.risk_score >= 75 ? 'var(--danger)' : 'var(--warning)';
+                return (
+                  <div key={i} style={{
+                    fontSize:12, padding:'5px 0', borderBottom:'1px solid var(--border)',
+                    display:'flex', alignItems:'center', gap:6,
+                  }}>
+                    <span style={{
+                      background: ec, color:'#fff', borderRadius:3,
+                      padding:'0 5px', fontSize:10, fontWeight:600,
+                    }}>{e.risk_score}</span>
+                    <span style={{color:'var(--text-secondary)', flex:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>
+                      {e.reason}
+                    </span>
+                    <span style={{fontSize:10, color:'var(--text-secondary)'}}>
+                      {e.timestamp?.substring(5, 16) || ''}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
           {anomalies?.first_seen?.length > 0 ? (
             <div>
               <div style={{fontSize:12, color:'var(--text-secondary)', marginBottom:6}}>🆕 首次访问 ({anomalies.first_seen.length}个)</div>
@@ -146,9 +210,7 @@ export function DeviceDetail({ ip, onBack }: { ip: string; onBack: () => void })
               ))}
               {anomalies.first_seen.length > 10 && <div style={{fontSize:12, color:'var(--text-secondary)', marginTop:4}}>+{anomalies.first_seen.length-10} 更多</div>}
             </div>
-          ) : (
-            <div style={{color:'var(--text-secondary)', fontSize:13}}>未发现异常</div>
-          )}
+          ) : null}
           <div style={{marginTop:8, fontSize:11, color:'var(--text-secondary)'}}>
             基线: {anomalies?.baseline_size || 0} 个已知目标
           </div>

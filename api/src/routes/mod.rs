@@ -7,9 +7,10 @@ pub mod queries;
 use clap::Parser;
 use reqwest::Client as HttpClient;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::sync::atomic::{AtomicU64, Ordering};
 use utoipa::ToSchema;
 
-pub use std::sync::Arc;
 
 #[derive(Parser)]
 #[command(name = "api", about = "Traffic analysis API server")]
@@ -28,10 +29,21 @@ pub struct AppState {
     pub database: String,
     pub api_key: String,
     pub started_at: chrono::DateTime<chrono::Utc>,
+    /// IPs whose anomaly alerts have been resolved (in-memory, resets on restart).
+    pub resolved_ips: std::sync::Mutex<std::collections::HashSet<String>>,
+    /// Request counter for metrics.
+    pub total_requests: AtomicU64,
+    /// Per-path request counts.
+    pub path_counts: std::sync::Mutex<HashMap<String, u64>>,
+    /// ClickHouse query failures (for /api/metrics).
+    pub ch_errors: AtomicU64,
 }
 
 pub fn ch_escape(s: &str) -> String {
-    s.replace('\\', "\\\\").replace('\'', "\\'")
+    s.replace('\\', "\\\\")
+        .replace('\'', "\\'")
+        .replace('%', "\\%")
+        .replace('_', "\\_")
 }
 
 pub fn since_expr(since: &str) -> String {
@@ -39,18 +51,23 @@ pub fn since_expr(since: &str) -> String {
     if since.is_empty() {
         return "now() - toIntervalHour(1)".to_string();
     }
+    // Try each suffix; only match if the prefix is a valid integer.
     if let Some(rest) = since.strip_suffix('m') {
-        let n: u64 = rest.parse().unwrap_or(15);
-        format!("now() - toIntervalMinute({})", n.min(525600))
-    } else if let Some(rest) = since.strip_suffix('h') {
-        let n: u64 = rest.parse().unwrap_or(1);
-        format!("now() - toIntervalHour({})", n.min(8760))
-    } else if let Some(rest) = since.strip_suffix('d') {
-        let n: u64 = rest.parse().unwrap_or(1);
-        format!("now() - toIntervalDay({})", n.min(365))
-    } else {
-        "now() - toIntervalHour(1)".to_string()
+        if let Ok(n) = rest.parse::<u64>() {
+            return format!("now() - toIntervalMinute({})", n.min(525600));
+        }
     }
+    if let Some(rest) = since.strip_suffix('h') {
+        if let Ok(n) = rest.parse::<u64>() {
+            return format!("now() - toIntervalHour({})", n.min(8760));
+        }
+    }
+    if let Some(rest) = since.strip_suffix('d') {
+        if let Ok(n) = rest.parse::<u64>() {
+            return format!("now() - toIntervalDay({})", n.min(365));
+        }
+    }
+    "now() - toIntervalHour(1)".to_string()
 }
 
 pub async fn ch_query<T: serde::de::DeserializeOwned>(
@@ -68,10 +85,17 @@ pub async fn ch_query<T: serde::de::DeserializeOwned>(
         .header("Content-Type", "text/plain")
         .send()
         .await
-        .map_err(|e| format!("HTTP: {}", e))?;
+        .map_err(|e| {
+            state.ch_errors.fetch_add(1, Ordering::Relaxed);
+            format!("HTTP: {}", e)
+        })?;
     let status = resp.status();
-    let text = resp.text().await.map_err(|e| format!("Read: {}", e))?;
+    let text = resp.text().await.map_err(|e| {
+        state.ch_errors.fetch_add(1, Ordering::Relaxed);
+        format!("Read: {}", e)
+    })?;
     if !status.is_success() {
+        state.ch_errors.fetch_add(1, Ordering::Relaxed);
         return Err(format!("CH error ({}): {}", status, text));
     }
     let mut r = Vec::new();
@@ -471,9 +495,153 @@ pub fn behavior_score(
     } else {
         1.0
     };
-    let diversity = (app_count as f64).ln() / 5.0f64.ln();
+    let diversity = if app_count > 0 {
+        (app_count as f64).ln() / 5.0f64.ln()
+    } else {
+        0.0
+    };
     let intensity = (flow_count as f64 / 300.0).min(1.0);
     (novelty * 50.0 + diversity * 25.0 + intensity * 25.0).min(100.0)
+}
+
+// ─── Typed response types for analysis handlers ───
+
+#[derive(Serialize, ToSchema)]
+pub struct HealthResponse {
+    pub status: String,
+    pub flows: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct ResolveResponse {
+    pub resolved: bool,
+    pub ip: String,
+}
+
+#[derive(Deserialize, Serialize, ToSchema)]
+pub struct TlsFingerprintRow {
+    pub tls_signature_hash: String,
+    #[serde(default)]
+    pub ja3: String,
+    #[serde(default)]
+    pub ja3s: String,
+    #[serde(default)]
+    pub tls_version: String,
+    pub cnt: u64,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct TlsFingerprintResponse {
+    pub distinct_signatures: u64,
+    pub fingerprints: Vec<TlsFingerprintRow>,
+}
+
+#[derive(Deserialize, Serialize, ToSchema)]
+pub struct HourlyAppRow {
+    pub h: u8,
+    pub app_name: String,
+    pub c: u64,
+}
+
+#[derive(Deserialize, Serialize, ToSchema)]
+pub struct TimelineSiteRow {
+    pub h: u8,
+    #[serde(default)]
+    pub sni: String,
+    #[serde(default)]
+    pub dns_domain: String,
+    pub c: u64,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct TimelineResponse {
+    pub hourly_apps: Vec<HourlyAppRow>,
+    pub visited_sites: Vec<TimelineSiteRow>,
+}
+
+#[derive(Deserialize, Serialize, ToSchema)]
+pub struct AnomalyAlertRow {
+    pub src_ip: String,
+    #[serde(default)]
+    pub src_mac: String,
+    pub risk_score: u8,
+    #[serde(default)]
+    pub reason: String,
+    #[serde(default)]
+    pub details: String,
+    pub timestamp: String,
+}
+
+#[derive(Deserialize, Serialize, ToSchema)]
+pub struct TrafficAlertRow {
+    pub src_ip: String,
+    pub dests: u64,
+    pub apps: u64,
+    pub bytes: f64,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct AlertsResponse {
+    pub anomaly_alerts: Vec<AnomalyAlertRow>,
+    pub traffic_alerts: Vec<TrafficAlertRow>,
+    pub total: usize,
+}
+
+#[derive(Deserialize, Serialize, ToSchema)]
+pub struct AnomalySummary {
+    pub total: u64,
+    pub avg_risk: f64,
+    pub max_risk: u64,
+    pub affected_devices: u64,
+}
+
+#[derive(Deserialize, Serialize, ToSchema)]
+pub struct AnomalyEventRow {
+    pub timestamp: String,
+    pub src_ip: String,
+    #[serde(default)]
+    pub src_mac: String,
+    pub risk_score: u8,
+    #[serde(default)]
+    pub reason: String,
+    #[serde(default)]
+    pub details: String,
+    pub resolved: u8,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct AnomalyResponse {
+    pub summary: AnomalySummary,
+    pub events: Vec<AnomalyEventRow>,
+}
+
+#[derive(Deserialize, Serialize, ToSchema)]
+pub struct HttpSessionRow {
+    pub timestamp: String,
+    #[serde(default)]
+    pub host: String,
+    #[serde(default)]
+    pub method: String,
+    #[serde(default)]
+    pub path: String,
+    pub status_code: u16,
+    #[serde(default)]
+    pub content_type: String,
+    pub content_length: u32,
+    #[serde(default)]
+    pub user_agent: String,
+}
+
+#[derive(Deserialize, Serialize, ToSchema)]
+pub struct TopologyRow {
+    pub src_ip: String,
+    pub dst_ip: String,
+    #[serde(default)]
+    pub app_name: String,
+    pub w: u64,
+    pub b: f64,
 }
 
 #[cfg(test)]
@@ -486,6 +654,10 @@ mod tests {
         assert_eq!(ch_escape("it's"), "it\\'s");
         assert_eq!(ch_escape("back\\slash"), "back\\\\slash");
         assert_eq!(ch_escape("' OR 1=1 --"), "\\' OR 1=1 --");
+        assert_eq!(ch_escape("%"), "\\%");
+        assert_eq!(ch_escape("_"), "\\_");
+        assert_eq!(ch_escape("192.168.1.1"), "192.168.1.1");
+        assert_eq!(ch_escape("' OR 1=1 -- %"), "\\' OR 1=1 -- \\%");
     }
 
     #[test]
@@ -513,13 +685,20 @@ mod tests {
     }
 
     #[test]
+    fn test_since_expr_edge_cases() {
+        let r = since_expr("0m");
+        assert_eq!(r, "now() - toIntervalMinute(0)");
+        let r = since_expr("999999m");
+        assert!(r.contains("Minute("));
+    }
+
+    #[test]
     fn test_behavior_score_zero_destinations() {
         assert_eq!(behavior_score(0, 0, 0, 0, 0), 0.0);
     }
 
     #[test]
     fn test_behavior_score_normal() {
-        // Low novelty, moderate diversity, low intensity
         let score = behavior_score(1, 20, 5, 100, 10);
         assert!(score < 50.0);
     }
@@ -527,7 +706,6 @@ mod tests {
     #[test]
     fn test_behavior_score_high_novelty() {
         let score = behavior_score(10, 10, 2, 10, 5);
-        // 10/10 * 50 + diversity + intensity = ~50+
         assert!(score > 50.0);
     }
 
@@ -535,6 +713,14 @@ mod tests {
     fn test_behavior_score_capped() {
         let score = behavior_score(100, 100, 50, 10, 1000);
         assert!(score <= 100.0);
+    }
+
+    #[test]
+    fn test_behavior_score_extremes() {
+        let score = behavior_score(0, 0, 0, 0, 0);
+        assert_eq!(score, 0.0);
+        let score = behavior_score(0, 1, 0, 0, 0);
+        assert!(score >= 0.0);
     }
 
     #[test]
@@ -546,20 +732,31 @@ mod tests {
     #[test]
     fn test_identify_device_model_apple() {
         let model = identify_device_model(&[], &["apple.com".into(), "icloud.com".into()], "", "");
-        // Without specific UA, it should fall through to a generic match or empty
-        // The function checks combined domains first
-        assert!(
-            model.is_empty()
-                || model.contains("iPhone")
-                || model.contains("Mac")
-                || model.contains("iPad")
-        );
+        assert!(model.is_empty() || model.contains("iPhone") || model.contains("Mac") || model.contains("iPad"));
     }
 
     #[test]
     fn test_identify_device_model_windows() {
         let model = identify_device_model(&[], &[], "", "Mozilla/5.0 Windows NT 10.0");
         assert_eq!(model, "Windows 10/11");
+    }
+
+    #[test]
+    fn test_identify_device_model_ipad() {
+        let model = identify_device_model(&[], &["apple.com".into()], "", "Mozilla/5.0 iPad");
+        assert!(model.contains("iPad") || model.contains("Apple"));
+    }
+
+    #[test]
+    fn test_identify_device_model_macbook() {
+        let model = identify_device_model(&[], &["apple.com".into()], "", "Mozilla/5.0 Macintosh Intel Mac OS X MacBookPro");
+        assert_eq!(model, "MacBook Pro");
+    }
+
+    #[test]
+    fn test_identify_device_model_huawei() {
+        let model = identify_device_model(&[], &["huawei.com".into()], "", "HUAWEI Pura70");
+        assert!(model.contains("Huawei") || !model.is_empty());
     }
 
     #[test]
@@ -581,8 +778,50 @@ mod tests {
     #[test]
     fn test_profile_device_dns_signals() {
         let (dev_type, os, _) = profile_device(&[], &["miui.com".into(), "icloud.com".into()], "");
-        // Xiaomi signals detected
         assert_eq!(dev_type, "Xiaomi");
         assert_eq!(os, "Android");
+    }
+
+    #[test]
+    fn test_api_response_serialization() {
+        let resp = ApiResponse::ok(42usize);
+        let json = serde_json::to_value(&resp).unwrap();
+        assert_eq!(json["success"], true);
+        assert_eq!(json["data"], 42);
+        assert!(json.get("error").is_none());
+    }
+
+    #[test]
+    fn test_api_response_error() {
+        let resp = api_err("test error");
+        let json = serde_json::to_value(&resp).unwrap();
+        assert_eq!(json["success"], false);
+        assert_eq!(json["error"], "test error");
+    }
+
+    #[test]
+    fn test_ch_escape_sql_injection() {
+        // Ensure basic SQL injection patterns are escaped
+        assert_ne!(ch_escape("'; DROP TABLE flows; --"), "' OR 1=1 --");
+        assert!(ch_escape("' OR '1'='1").contains("\\'"));
+    }
+
+    #[test]
+    fn test_since_expr_invalid() {
+        let r = since_expr("invalid");
+        assert_eq!(r, "now() - toIntervalHour(1)");
+    }
+
+    #[test]
+    fn test_device_profile_empty() {
+        let (dev_type, os, conf) = profile_device(&[], &[], "");
+        assert!(conf <= 0.5);
+        assert!(!dev_type.is_empty() || conf == 0.0);
+    }
+
+    #[test]
+    fn test_device_model_empty() {
+        let model = identify_device_model(&[], &[], "", "");
+        assert!(model.is_empty());
     }
 }

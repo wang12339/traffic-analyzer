@@ -1,13 +1,10 @@
 import React from 'react';
+import { getTopology } from '../utils/api';
 import { useApi } from '../hooks/useApi';
 import { LoadingSpinner, ErrorState, EmptyState } from './LoadingState';
 
 export function TopologyView() {
-  const topo = useApi(
-    () => fetch('/api/topology').then(r => r.json()).then(j => j.success ? j.data : Promise.reject(j.error)),
-    [],
-    { interval: 15000 }
-  );
+  const topo = useApi(() => getTopology(), [], { interval: 15000 });
 
   if (topo.loading && !topo.data) return <LoadingSpinner message="加载拓扑..." />;
   if (topo.error) return <ErrorState error={topo.error} onRetry={topo.refetch} />;

@@ -10,7 +10,7 @@ use actix_web::{web, HttpResponse};
     ),
     tag = "Stats"
 )]
-pub async fn get_stats(state: web::Data<Arc<AppState>>, q: web::Query<TimeQuery>) -> HttpResponse {
+pub async fn get_stats(state: web::Data<AppState>, q: web::Query<TimeQuery>) -> HttpResponse {
     let se = since_expr(q.since.as_deref().unwrap_or("24h"));
     let sql = format!(
         "SELECT count() as total_flows,sum(bytes_up+bytes_down) as total_bytes,\
@@ -51,7 +51,7 @@ pub async fn get_stats(state: web::Data<Arc<AppState>>, q: web::Query<TimeQuery>
     ),
     tag = "Flows"
 )]
-pub async fn get_flows(state: web::Data<Arc<AppState>>, q: web::Query<FlowQuery>) -> HttpResponse {
+pub async fn get_flows(state: web::Data<AppState>, q: web::Query<FlowQuery>) -> HttpResponse {
     let limit = q.limit.unwrap_or(100).min(1000);
     let se = since_expr(q.since.as_deref().unwrap_or("1h"));
     let mut cond = format!("timestamp >= {}", se);
@@ -102,7 +102,7 @@ pub async fn get_flows(state: web::Data<Arc<AppState>>, q: web::Query<FlowQuery>
     ),
     tag = "Apps"
 )]
-pub async fn get_apps(state: web::Data<Arc<AppState>>, q: web::Query<TimeQuery>) -> HttpResponse {
+pub async fn get_apps(state: web::Data<AppState>, q: web::Query<TimeQuery>) -> HttpResponse {
     let se = since_expr(q.since.as_deref().unwrap_or("24h"));
     let sql = format!(
         "SELECT app_id,app_name,app_category,count() as flow_count,\
@@ -126,7 +126,7 @@ pub async fn get_apps(state: web::Data<Arc<AppState>>, q: web::Query<TimeQuery>)
     tag = "Devices"
 )]
 pub async fn get_devices(
-    state: web::Data<Arc<AppState>>,
+    state: web::Data<AppState>,
     q: web::Query<TimeQuery>,
 ) -> HttpResponse {
     let se = since_expr(q.since.as_deref().unwrap_or("24h"));
@@ -152,7 +152,7 @@ pub async fn get_devices(
     ),
     tag = "DNS"
 )]
-pub async fn get_dns(state: web::Data<Arc<AppState>>, q: web::Query<TimeQuery>) -> HttpResponse {
+pub async fn get_dns(state: web::Data<AppState>, q: web::Query<TimeQuery>) -> HttpResponse {
     let se = since_expr(q.since.as_deref().unwrap_or("24h"));
     let sql = format!(
         "SELECT dns_domain,count() as count,countDistinct(src_ip) as clients \
@@ -174,7 +174,7 @@ pub async fn get_dns(state: web::Data<Arc<AppState>>, q: web::Query<TimeQuery>) 
     ),
     tag = "SNI"
 )]
-pub async fn get_sni(state: web::Data<Arc<AppState>>, q: web::Query<TimeQuery>) -> HttpResponse {
+pub async fn get_sni(state: web::Data<AppState>, q: web::Query<TimeQuery>) -> HttpResponse {
     let se = since_expr(q.since.as_deref().unwrap_or("24h"));
     let sql = format!(
         "SELECT sni,count() as count,countDistinct(src_ip) as clients \
@@ -196,7 +196,7 @@ pub async fn get_sni(state: web::Data<Arc<AppState>>, q: web::Query<TimeQuery>) 
     ),
     tag = "Trends"
 )]
-pub async fn get_trends(state: web::Data<Arc<AppState>>, q: web::Query<TimeQuery>) -> HttpResponse {
+pub async fn get_trends(state: web::Data<AppState>, q: web::Query<TimeQuery>) -> HttpResponse {
     let se = since_expr(q.since.as_deref().unwrap_or("24h"));
     let sql = format!(
         "SELECT toStartOfMinute(timestamp) as bucket,count() as flows,\
@@ -220,7 +220,7 @@ pub async fn get_trends(state: web::Data<Arc<AppState>>, q: web::Query<TimeQuery
     tag = "Export"
 )]
 pub async fn export_csv(
-    state: web::Data<Arc<AppState>>,
+    state: web::Data<AppState>,
     query: web::Query<FlowQuery>,
 ) -> HttpResponse {
     let since = query.since.as_deref().unwrap_or("1h");
@@ -282,7 +282,7 @@ pub async fn export_csv(
     ),
     tag = "Summary"
 )]
-pub async fn get_summary(state: web::Data<Arc<AppState>>) -> HttpResponse {
+pub async fn get_summary(state: web::Data<AppState>) -> HttpResponse {
     let sql_t = format!(
         "SELECT count() as total,sum(bytes_up+bytes_down) as bytes,count(DISTINCT src_ip) as devices,        count(DISTINCT app_name) as apps FROM {}.flows WHERE timestamp>=now()-toIntervalDay(1)",
         state.database

@@ -6,6 +6,7 @@ use std::net::IpAddr;
 use std::sync::Arc;
 use traffic_core::{ip_from_bytes, mac_to_string, TCP_FIN, TCP_RST};
 
+use crate::anomaly::AnomalyDetector;
 use crate::dns_parser;
 use crate::http_parser;
 use crate::mysql_parser;
@@ -192,6 +193,7 @@ impl FlowState {
             device_manufacturer: String::new(),
             device_hostname: self.device_hostname.clone().unwrap_or_default(),
             engines: self.engines.clone().unwrap_or_default(),
+            risk_score: 0,
         }
     }
 }
@@ -204,10 +206,12 @@ pub struct FlowAggregator {
     store: Arc<ClickStore>,
     expire_secs: u64,
     flow_counter: u64,
+    anomaly_detector: AnomalyDetector,
 }
 
 impl FlowAggregator {
     pub fn new(expire_secs: u64, store: Arc<ClickStore>) -> Self {
+        let detector = AnomalyDetector::new();
         Self {
             flows: HashMap::new(),
             ip_to_mac: HashMap::new(),
@@ -215,11 +219,12 @@ impl FlowAggregator {
             store,
             expire_secs,
             flow_counter: 0,
+            anomaly_detector: detector,
         }
     }
 
     /// Process a single packet frame from the agent.
-    pub async fn process_packet(&mut self, ts_ns: u64, frame: &PacketFrame) {
+    pub fn process_packet(&mut self, ts_ns: u64, frame: &PacketFrame) {
         let src_ip = ip_from_bytes(&frame.src_ip);
         let dst_ip = ip_from_bytes(&frame.dst_ip);
         let src_mac = mac_to_string(&frame.src_mac);
@@ -253,123 +258,174 @@ impl FlowAggregator {
         }
 
         // ─── L7 Analysis ───
-        if frame.protocol == 6 {
-            // TCP
-            // Determine if this packet is from client side（使用 is_up 避免 canonical key 交换影响）
+        if frame.protocol == 6 && !frame.payload.is_empty() {
             let is_client_side = is_up;
+            Self::process_l7_tcp(
+                &mut self.tcp_reasm, state, &key, frame, is_client_side,
+            );
+        } else if frame.protocol == 17 && !frame.payload.is_empty() {
+            Self::process_l7_udp(state, frame);
+        }
 
-            // TCP reassembly for TLS
-            if !frame.payload.is_empty() {
-                let tls_result =
-                    self.tcp_reasm
-                        .process_segment(&key, &frame.payload, is_client_side);
-                if let Some((ch, sh)) = tls_result {
-                    if !ch.sni.is_empty() {
-                        state.sni = Some(ch.sni.clone());
-                    }
-                    if !ch.ja3.is_empty() {
-                        state.ja3 = Some(ch.ja3.clone());
-                    }
-                    if !ch.tls_signature.is_empty() {
-                        state.tls_signature_hash = Some(ch.tls_signature.clone());
-                    }
-                    if sh.tls_version != 0 {
-                        state.tls_version = Some(format!(
-                            "TLSv1.{}",
-                            if sh.tls_version == 0x0304 {
-                                3
-                            } else if sh.tls_version == 0x0303 {
-                                2
-                            } else {
-                                1
-                            }
-                        ));
-                        state.ja3s = Some(sh.ja3s.clone());
-                        state.server_cipher_suite = Some(sh.cipher_suite);
-                    }
-                }
+        // TCP FIN/RST: 标记流已结束，下次 flush 立即写出
+        if frame.protocol == 6 && (frame.tcp_flags & (TCP_FIN | TCP_RST)) != 0 {
+            state.finalized = true;
+        }
+    }
 
-                // HTTP parsing (cleartext ports)
-                if frame.dst_port == 80 || frame.dst_port == 8080 || frame.dst_port == 8000 {
-                    // HTTP request from client
-                    if is_client_side {
-                        if let Some(http) = http_parser::parse_http_request(&frame.payload) {
-                            state.http_host = Some(http.host);
-                            state.http_method = Some(http.method);
-                            state.http_ua = Some(http.user_agent);
-                        }
-                    }
-                }
+    // ─── L7 processing (associated functions — no &self, explicit deps only) ───
 
-                // CONNECT parsing (HTTP proxy)
-                if frame.dst_port == 80 || frame.dst_port == 8080 {
-                    if is_client_side {
-                        if let Some(host) = http_parser::parse_connect_request(&frame.payload) {
-                            state.sni = Some(host);
-                        }
-                    }
-                }
+    /// TCP L7 pipeline: TLS → HTTP → MySQL → Redis → re-classify.
+    fn process_l7_tcp(
+        tcp_reasm: &mut TcpReassembler,
+        state: &mut FlowState,
+        key: &FlowKey,
+        frame: &PacketFrame,
+        is_client_side: bool,
+    ) {
+        let tcp_seq = if frame.tcp_seq != 0 { Some(frame.tcp_seq) } else { None };
+        Self::process_l7_tls(tcp_reasm, state, key, frame, is_client_side, tcp_seq);
+        Self::process_l7_http(state, frame, is_client_side);
+        Self::process_l7_mysql(state, key, frame, is_client_side);
+        Self::process_l7_redis(state, key, frame);
+        Self::update_classification(state, key);
+    }
 
-                // MySQL protocol parsing (port 3306)
-                if frame.dst_port == 3306 && !frame.payload.is_empty() {
-                    if let Some(hs) = mysql_parser::parse_handshake(&frame.payload) {
-                        let meta = format!("mysql:{}/{}", hs.server_version, hs.auth_plugin);
-                        state.http_host = Some(meta);
-                    }
-                    if is_client_side {
-                        if let Some(cmd) = mysql_parser::parse_command(&frame.payload) {
-                            if cmd.dangerous {
-                                tracing::warn!(
-                                    "Dangerous MySQL command detected: {} -> {}",
-                                    key.src_ip,
-                                    cmd.query_summary
-                                );
-                            }
-                        }
-                    }
-                }
-
-                // Redis protocol parsing (port 6379)
-                if (frame.dst_port == 6379 || frame.src_port == 6379) && !frame.payload.is_empty() {
-                    if let Some(r) = redis_parser::parse_command(&frame.payload) {
-                        let mut meta = format!("redis:{}", r.command);
-                        if let Some(db) = r.db_index {
-                            meta.push_str(&format!(" db={}", db));
-                        }
-                        if r.dangerous {
-                            meta.push_str(" ⚠️");
-                            tracing::warn!(
-                                "Dangerous Redis command: {} from {}",
-                                r.command,
-                                key.src_ip
-                            );
-                        }
-                        state.http_ua = Some(meta);
-                    }
-                }
+    /// TLS/SNI/JA3 via TCP reassembly.
+    fn process_l7_tls(
+        tcp_reasm: &mut TcpReassembler,
+        state: &mut FlowState,
+        key: &FlowKey,
+        frame: &PacketFrame,
+        is_client_side: bool,
+        tcp_seq: Option<u32>,
+    ) {
+        let tls_result = tcp_reasm.process_segment(key, &frame.payload, is_client_side, tcp_seq);
+        if let Some((ch, sh)) = tls_result {
+            if !ch.sni.is_empty() {
+                state.sni = Some(ch.sni.clone());
             }
-        } else if frame.protocol == 17 {
-            // UDP
-            if (frame.dst_port == 53 || frame.src_port == 53) && !frame.payload.is_empty() {
-                let dns = dns_parser::parse_dns_query(&frame.payload);
-                if let Some(domain) = dns {
-                    state.dns_domain = Some(domain);
-                }
+            if !ch.ja3.is_empty() {
+                state.ja3 = Some(ch.ja3.clone());
             }
-            // QUIC SNI extraction (UDP/443)
-            if (frame.src_port == 443 || frame.dst_port == 443) && !frame.payload.is_empty() {
-                tracing::debug!("QUIC: UDP/443 packet, payload_len={}", frame.payload.len());
-                let quic = crate::quic_parser::parse_quic_initial(&frame.payload);
-                if let Some(q) = quic {
-                    tracing::debug!("QUIC parsed: sni={}", q.sni);
-                    if !q.sni.is_empty() {
-                        state.sni = Some(q.sni.clone());
-                    }
+            if !ch.tls_signature.is_empty() {
+                state.tls_signature_hash = Some(ch.tls_signature.clone());
+            }
+            if sh.tls_version != 0 {
+                state.tls_version = Some(format!(
+                    "TLSv1.{}",
+                    if sh.tls_version == 0x0304 { 3 }
+                    else if sh.tls_version == 0x0303 { 2 }
+                    else { 1 }
+                ));
+                state.ja3s = Some(sh.ja3s.clone());
+                state.server_cipher_suite = Some(sh.cipher_suite);
+            }
+        }
+    }
+
+    /// HTTP cleartext + CONNECT proxy parsing.
+    fn process_l7_http(
+        state: &mut FlowState,
+        frame: &PacketFrame,
+        is_client_side: bool,
+    ) {
+        if frame.dst_port == 80 || frame.dst_port == 8080 || frame.dst_port == 8000 {
+            if is_client_side {
+                if let Some(http) = http_parser::parse_http_request(&frame.payload) {
+                    state.http_host = Some(http.host);
+                    state.http_method = Some(http.method);
+                    state.http_ua = Some(http.user_agent);
                 }
             }
         }
+        // CONNECT parsing (HTTP proxy)
+        if frame.dst_port == 80 || frame.dst_port == 8080 {
+            if is_client_side {
+                if let Some(host) = http_parser::parse_connect_request(&frame.payload) {
+                    state.sni = Some(host);
+                }
+            }
+        }
+    }
 
-        // Classify/re-classify: multi-engine with all available data
+    /// MySQL protocol: handshake metadata + dangerous command detection.
+    fn process_l7_mysql(
+        state: &mut FlowState,
+        key: &FlowKey,
+        frame: &PacketFrame,
+        is_client_side: bool,
+    ) {
+        if frame.dst_port != 3306 {
+            return;
+        }
+        if let Some(hs) = mysql_parser::parse_handshake(&frame.payload) {
+            let meta = format!("mysql:{}/{}", hs.server_version, hs.auth_plugin);
+            state.http_host = Some(meta);
+        }
+        if is_client_side {
+            if let Some(cmd) = mysql_parser::parse_command(&frame.payload) {
+                if cmd.dangerous {
+                    tracing::warn!(
+                        "Dangerous MySQL command detected: {} -> {}",
+                        key.src_ip,
+                        cmd.query_summary
+                    );
+                }
+            }
+        }
+    }
+
+    /// Redis protocol parsing.
+    fn process_l7_redis(
+        state: &mut FlowState,
+        key: &FlowKey,
+        frame: &PacketFrame,
+    ) {
+        if frame.dst_port != 6379 && frame.src_port != 6379 {
+            return;
+        }
+        if let Some(r) = redis_parser::parse_command(&frame.payload) {
+            let mut meta = format!("redis:{}", r.command);
+            if let Some(db) = r.db_index {
+                meta.push_str(&format!(" db={}", db));
+            }
+            if r.dangerous {
+                meta.push_str(" ⚠️");
+                tracing::warn!(
+                    "Dangerous Redis command: {} from {}",
+                    r.command,
+                    key.src_ip
+                );
+            }
+            state.http_ua = Some(meta);
+        }
+    }
+
+    /// UDP protocol analysis: DNS + QUIC SNI.
+    fn process_l7_udp(
+        state: &mut FlowState,
+        frame: &PacketFrame,
+    ) {
+        // DNS
+        if frame.dst_port == 53 || frame.src_port == 53 {
+            if let Some(domain) = dns_parser::parse_dns_query(&frame.payload) {
+                state.dns_domain = Some(domain);
+            }
+        }
+        // QUIC SNI (UDP/443)
+        if frame.src_port == 443 || frame.dst_port == 443 {
+            let quic = crate::quic_parser::parse_quic_initial(&frame.payload);
+            if let Some(q) = quic {
+                if !q.sni.is_empty() {
+                    state.sni = Some(q.sni);
+                }
+            }
+        }
+    }
+
+    /// Run multi-engine classification when better data arrives or not yet classified.
+    fn update_classification(state: &mut FlowState, key: &FlowKey) {
         let has_better_data = state.sni.is_some() || state.dns_domain.is_some();
         let is_port_only = state
             .classification
@@ -398,15 +454,9 @@ impl FlowAggregator {
             if multi.primary.confidence > 0.3 {
                 state.classification = Some(multi.primary);
             }
-            // 序列化引擎判定结果
             if !multi.engines.is_empty() {
                 state.engines = Some(serde_json::to_string(&multi.engines).unwrap_or_default());
             }
-        }
-
-        // TCP FIN/RST: 标记流已结束，下次 flush 立即写出
-        if frame.protocol == 6 && (frame.tcp_flags & (TCP_FIN | TCP_RST)) != 0 {
-            state.finalized = true;
         }
     }
 
@@ -432,7 +482,7 @@ impl FlowAggregator {
 
         if expired_keys.is_empty() {
             if self.flows.len() > 0 {
-                tracing::info!("FlushCheck: {} active flows, 0 expired", self.flows.len());
+                tracing::debug!("FlushCheck: {} active flows, 0 expired", self.flows.len());
             }
             return Ok(());
         }
@@ -463,13 +513,34 @@ impl FlowAggregator {
                 self.flow_counter
             );
 
-            // Batch write to ClickHouse
-            let store = self.store.clone();
+            // Evaluate each flow for anomalies, set risk_score, collect alerts
+            let ts = traffic_core::now_ns();
+            let mut alerts = Vec::new();
+            for rec in &mut records {
+                let (score, event) = self.anomaly_detector.evaluate(rec, ts);
+                rec.risk_score = score;
+                if let Some(e) = event {
+                    alerts.push(e);
+                }
+            }
+            // Write flows to ClickHouse
+            let store_f = self.store.clone();
             tokio::spawn(async move {
-                if let Err(e) = store.write_flows(&records).await {
+                if let Err(e) = store_f.write_flows(&records).await {
                     tracing::warn!("ClickHouse write failed: {:#}", e);
                 }
             });
+            // Write anomaly alerts
+            if !alerts.is_empty() {
+                let store_a = self.store.clone();
+                tokio::spawn(async move {
+                    for alert in &alerts {
+                        if let Err(e) = store_a.write_anomaly_alert(alert).await {
+                            tracing::warn!("Anomaly alert write failed: {:#}", e);
+                        }
+                    }
+                });
+            }
         }
 
         Ok(())
@@ -523,7 +594,7 @@ impl ShardedFlowAggregator {
     pub async fn process_packet(&self, ts_ns: u64, frame: &PacketFrame) {
         let idx = self.shard_index(frame);
         let mut shard = self.shards[idx].lock().await;
-        shard.process_packet(ts_ns, frame).await;
+        shard.process_packet(ts_ns, frame);
     }
 
     pub async fn flush_expired(&self, now_ns: u64) {

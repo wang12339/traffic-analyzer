@@ -1,13 +1,29 @@
 FROM rust:1.85-slim-bookworm AS builder
 WORKDIR /app
+
+# ─── Layer 1: dependency manifests ───
 COPY Cargo.toml Cargo.lock ./
-COPY traffic-core/ traffic-core/
-COPY ingest/ ingest/
-RUN apt-get update && apt-get install -y pkg-config libssl-dev && rm -rf /var/lib/apt/lists/*
+COPY traffic-core/Cargo.toml traffic-core/Cargo.toml
+COPY ingest/Cargo.toml ingest/Cargo.toml
+COPY api/Cargo.toml api/Cargo.toml
+
+# ─── Layer 2: dummy source → build dependencies (cached until Cargo.toml changes) ───
+RUN mkdir -p traffic-core/src ingest/src api/src && \
+    echo 'fn main(){}' > ingest/src/main.rs && \
+    echo 'fn main(){}' > api/src/main.rs && \
+    echo '#[allow(dead_code)] fn dummy() {}' > traffic-core/src/lib.rs && \
+    apt-get update && apt-get install -y pkg-config libssl-dev && rm -rf /var/lib/apt/lists/* && \
+    cargo build --release -p ingest 2>/dev/null; true
+
+# ─── Layer 3: real source + final build ───
+COPY traffic-core/src/ traffic-core/src/
+COPY ingest/src/ ingest/src/
 RUN cargo build --release -p ingest
 
 FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y ca-certificates && rm -rf /var/lib/apt/lists/*
 COPY --from=builder /app/target/release/ingest /app/ingest
 EXPOSE 9100 2055/udp
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
+  CMD sh -c 'kill -0 $$(pidof ingest) 2>/dev/null' || exit 1
 ENTRYPOINT ["/app/ingest"]

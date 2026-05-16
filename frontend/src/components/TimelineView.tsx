@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { getTimeline } from '../utils/api';
 import { useApi } from '../hooks/useApi';
 import { LoadingSpinner, ErrorState, EmptyState } from './LoadingState';
 
@@ -8,10 +9,7 @@ interface SiteVisit { h: number; sni: string; dns_domain: string; c: number; }
 export function TimelineView() {
   const [expandedHour, setExpandedHour] = useState<number | null>(null);
 
-  const timeline = useApi(
-    () => fetch('/api/timeline').then(r => r.json()).then(j => j.success ? j.data : Promise.reject(j.error)),
-    []
-  );
+  const timeline = useApi(() => getTimeline(), []);
 
   if (timeline.loading && !timeline.data) return <LoadingSpinner message="加载时间线..." />;
   if (timeline.error) return <ErrorState error={timeline.error} onRetry={timeline.refetch} />;

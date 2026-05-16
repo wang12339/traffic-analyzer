@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { Card, Row, Col, Statistic, Spin, Tag, Empty, Alert } from 'antd';
 import { GlobalOutlined, ApiOutlined, EnvironmentOutlined } from '@ant-design/icons';
 import * as echarts from 'echarts';
+import { getFlows } from '../utils/api';
 import { useApi } from '../hooks/useApi';
 import { resolveFlowIPs } from '../utils/geo';
 import { fmt } from './KpiBox';
@@ -27,11 +28,7 @@ export function GeoMapPage() {
   const [lines, setLines] = useState<FlowLine[]>([]);
   const [stats, setStats] = useState({ countries: 0, ips: 0, flows: 0 });
 
-  const flows = useApi(
-    () => fetch('/api/flows?limit=200&since=1h').then(r => r.json()).then(j => j.success ? j.data : Promise.reject(j.error)),
-    [],
-    { interval: 30000 }
-  );
+  const flows = useApi(() => getFlows({ limit: 200, since: '24h' }), [], { interval: 30000 });
 
   // Load world map GeoJSON from local file
   useEffect(() => {

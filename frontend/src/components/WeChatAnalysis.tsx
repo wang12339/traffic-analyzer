@@ -1,14 +1,11 @@
 import React from 'react';
+import { getWeChatAnalysis } from '../utils/api';
 import { useApi } from '../hooks/useApi';
 import { LoadingSpinner, ErrorState, EmptyState } from './LoadingState';
 import { KpiBox } from './KpiBox';
 
 export function WeChatAnalysis() {
-  const data = useApi(
-    () => fetch('/api/analysis/wechat').then(r => r.json()).then(j => j.success ? j.data : Promise.reject(j.error)),
-    [],
-    { interval: 15000 }
-  );
+  const data = useApi(() => getWeChatAnalysis(), [], { interval: 15000 });
 
   if (data.loading && !data.data) return <LoadingSpinner message="加载微信数据..." />;
   if (data.error) return <ErrorState error={data.error} onRetry={data.refetch} />;
