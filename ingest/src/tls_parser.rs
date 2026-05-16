@@ -71,7 +71,7 @@ pub fn parse_client_hello(buf: &[u8]) -> Option<TlsClientHello> {
     if pos + cs_len > ch.len() {
         return None;
     }
-    let cipher_suites: Vec<u16> = if cs_len % 2 == 0 {
+    let cipher_suites: Vec<u16> = if cs_len.is_multiple_of(2) {
         ch[pos..pos + cs_len]
             .chunks(2)
             .map(|c| u16::from_be_bytes([c[0], c[1]]))
@@ -143,7 +143,7 @@ pub fn parse_client_hello(buf: &[u8]) -> Option<TlsClientHello> {
             }
         } else if ext_type == TLS_EXT_SUPPORTED_GROUPS && ext_len > 2 {
             let glen = u16::from_be_bytes([ch[pos], ch[pos + 1]]) as usize;
-            if glen % 2 == 0 && pos + 2 + glen <= ch.len() {
+            if glen.is_multiple_of(2) && pos + 2 + glen <= ch.len() {
                 supported_groups = ch[pos + 2..pos + 2 + glen]
                     .chunks(2)
                     .map(|c| u16::from_be_bytes([c[0], c[1]]))

@@ -160,7 +160,7 @@ async fn main() -> Result<()> {
                                                     1,
                                                     std::sync::atomic::Ordering::Relaxed,
                                                 );
-                                                if c % 1000 == 0 {
+                                                if c.is_multiple_of(1000) {
                                                     warn!(
                                                         "Ingest channel full, dropped {} frames",
                                                         c + 1000

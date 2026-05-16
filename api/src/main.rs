@@ -118,7 +118,7 @@ async fn main() -> anyhow::Result<()> {
         path_counts: Mutex::new(HashMap::new()),
         ch_errors: AtomicU64::new(0),
     });
-    match ch_one::<serde_json::Value>(&*state, "SELECT 1 as v").await {
+    match ch_one::<serde_json::Value>(&state, "SELECT 1 as v").await {
         Ok(_) => info!("CH OK"),
         Err(e) => warn!("CH: {}", e),
     }

@@ -88,7 +88,7 @@ pub fn parse_connect_request(buf: &[u8]) -> Option<String> {
     }
     // CONNECT host:port HTTP/1.1
     let rest = s.trim_start_matches("CONNECT ");
-    let host_port = rest.splitn(2, ' ').next()?;
+    let host_port = rest.split(' ').next()?;
     let host = host_port.split(':').next()?;
     if host.is_empty() {
         None

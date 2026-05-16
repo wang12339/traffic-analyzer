@@ -400,7 +400,7 @@ pub async fn get_insights(state: web::Data<AppState>) -> HttpResponse {
         };
         let (dev_type, os, conf) = profile_device(&uniq_apps, &dests, &insight.mac);
         let model = identify_device_model(&uniq_apps, &dests, &insight.mac, "");
-        let ip_esc = ch_escape(&ip);
+        let ip_esc = ch_escape(ip);
         let base_sql = format!(
             "SELECT COUNT(DISTINCT sni)+COUNT(DISTINCT dns_domain) as c FROM {}.flows \
              WHERE src_ip='{}' AND timestamp>=now()-toIntervalDay(1) AND timestamp<now()-toIntervalMinute(5)",

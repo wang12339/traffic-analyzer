@@ -279,7 +279,7 @@ mod tests {
         assert!(result.is_none());
 
         // Verify state
-        let (up, down, ch, sh) = reasm.remove(&key).unwrap();
+        let (up, _down, _ch, _sh) = reasm.remove(&key).unwrap();
         assert_eq!(up, 11);
     }
 

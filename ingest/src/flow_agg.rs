@@ -139,8 +139,8 @@ impl FlowState {
 
         // Merge up/down histograms
         let mut hist = [0u32; 7];
-        for i in 0..7 {
-            hist[i] = self.pkt_size_hist_up[i] + self.pkt_size_hist_down[i];
+        for (h, (u, d)) in hist.iter_mut().zip(self.pkt_size_hist_up.iter().zip(self.pkt_size_hist_down.iter())) {
+            *h = u + d;
         }
 
         let iat_mean = if self.iat_count > 0 {
@@ -332,23 +332,21 @@ impl FlowAggregator {
 
     /// HTTP cleartext + CONNECT proxy parsing.
     fn process_l7_http(state: &mut FlowState, frame: &PacketFrame, is_client_side: bool) {
-        if frame.dst_port == 80 || frame.dst_port == 8080 || frame.dst_port == 8000 {
-            if is_client_side {
+        if (frame.dst_port == 80 || frame.dst_port == 8080 || frame.dst_port == 8000)
+            && is_client_side {
                 if let Some(http) = http_parser::parse_http_request(&frame.payload) {
                     state.http_host = Some(http.host);
                     state.http_method = Some(http.method);
                     state.http_ua = Some(http.user_agent);
                 }
             }
-        }
         // CONNECT parsing (HTTP proxy)
-        if frame.dst_port == 80 || frame.dst_port == 8080 {
-            if is_client_side {
+        if (frame.dst_port == 80 || frame.dst_port == 8080)
+            && is_client_side {
                 if let Some(host) = http_parser::parse_connect_request(&frame.payload) {
                     state.sni = Some(host);
                 }
             }
-        }
     }
 
     /// MySQL protocol: handshake metadata + dangerous command detection.
@@ -472,7 +470,7 @@ impl FlowAggregator {
         self.ip_to_mac.retain(|_, v| v.2 > mac_ttl);
 
         if expired_keys.is_empty() {
-            if self.flows.len() > 0 {
+            if !self.flows.is_empty() {
                 tracing::debug!("FlushCheck: {} active flows, 0 expired", self.flows.len());
             }
             return Ok(());
@@ -490,7 +488,7 @@ impl FlowAggregator {
                 let app = state
                     .classification
                     .clone()
-                    .unwrap_or_else(|| Classification::unknown());
+                    .unwrap_or_else(Classification::unknown);
                 records.push(state.to_flow_record(key, &app));
                 self.tcp_reasm.remove(key);
             }
@@ -546,7 +544,7 @@ impl FlowAggregator {
                 let app = state
                     .classification
                     .clone()
-                    .unwrap_or_else(|| Classification::unknown());
+                    .unwrap_or_else(Classification::unknown);
                 records.push(state.to_flow_record(key, &app));
             }
         }

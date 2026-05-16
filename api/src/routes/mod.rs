@@ -823,7 +823,7 @@ mod tests {
 
     #[test]
     fn test_device_profile_empty() {
-        let (dev_type, os, conf) = profile_device(&[], &[], "");
+        let (dev_type, _os, conf) = profile_device(&[], &[], "");
         assert!(conf <= 0.5);
         assert!(!dev_type.is_empty() || conf == 0.0);
     }

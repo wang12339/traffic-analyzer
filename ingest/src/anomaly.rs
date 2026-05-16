@@ -72,8 +72,8 @@ impl DeviceBaseline {
         } else {
             ""
         };
-        if !domain.is_empty() {
-            if !self.known_domains.contains(domain) {
+        if !domain.is_empty()
+            && !self.known_domains.contains(domain) {
                 self.known_domains.insert(domain.to_string());
                 self.domain_order.push_back(domain.to_string());
                 // LRU eviction
@@ -83,7 +83,6 @@ impl DeviceBaseline {
                     }
                 }
             }
-        }
 
         // Track throughput (moving average)
         if throughput_bps > 0.0 {
@@ -167,7 +166,7 @@ impl DeviceBaseline {
 
         if hour_ratio < expected * 0.1 && total_activity > 100 {
             // This hour has <10% of expected activity and we have enough data
-            let night_hours = hour < 6 || hour >= 23;
+            let night_hours = !(6..23).contains(&hour);
             if night_hours {
                 20.0 // Late night activity on a dormant device
             } else {
@@ -195,7 +194,7 @@ impl DeviceBaseline {
         let volume = self.volume_score(record);
         let timing = self.timing_score(record);
         let rate = self.flow_rate_score(record);
-        let total = (novelty + volume + timing + rate).min(100.0).max(0.0);
+        let total = (novelty + volume + timing + rate).clamp(0.0, 100.0);
         debug!(
             "anomaly_score: novelty={:.1} volume={:.1} timing={:.1} rate={:.1} total={}",
             novelty, volume, timing, rate, total as u8
@@ -362,7 +361,9 @@ impl AnomalyDetector {
 
         let ts_str = record.timestamp.format("%Y-%m-%d %H:%M:%S").to_string();
 
-        let event = AnomalyEvent {
+        
+
+        AnomalyEvent {
             timestamp: ts_str,
             src_ip: record.src_ip.clone(),
             src_mac: record.src_mac.clone(),
@@ -370,9 +371,7 @@ impl AnomalyDetector {
             reason,
             details: detail,
             resolved: 0,
-        };
-
-        event
+        }
     }
 }
 

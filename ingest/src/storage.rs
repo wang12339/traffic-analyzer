@@ -329,14 +329,14 @@ impl ClickStore {
         row.insert("bytes_down".into(), 0.into());
         row.insert(
             "duration_ms".into(),
-            ((ls - fs).max(0) as i64 / 1_000_000).into(),
+            ((ls - fs).max(0) / 1_000_000).into(),
         );
         row.insert("pkt_size_hist".into(), "[0,0,0,0,0,0,0]".into());
         row.insert("pkt_iat_mean_us".into(), 0.0.into());
         row.insert("app_id".into(), app_id.into());
         row.insert("app_name".into(), app_name.into());
         row.insert("app_category".into(), app_category.into());
-        row.insert("confidence".into(), (confidence as f32).into());
+        row.insert("confidence".into(), confidence.into());
         row.insert("src_mac".into(), src_mac.into());
         row.insert("device_manufacturer".into(), device_mfg.into());
         row.insert(

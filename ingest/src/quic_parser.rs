@@ -473,8 +473,8 @@ fn read_quic_varint(buf: &[u8]) -> Option<(u64, usize)> {
     };
 
     let mut value = 0u64;
-    for i in 0..len {
-        value = (value << 8) | buf[i] as u64;
+    for &b in buf.iter().take(len) {
+        value = (value << 8) | b as u64;
     }
     value &= mask;
 

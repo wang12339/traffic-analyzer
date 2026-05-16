@@ -700,7 +700,7 @@ fn port_rules(port: u16) -> EngineVerdict {
         161 | 162 => ("SNMP", "Network", 178),
         1900 => ("UPnP/SSDP", "Network", 180),
         5353 => ("mDNS", "Network", 179),
-        137 | 138 | 139 => ("NetBIOS", "Network", 181),
+        137..=139 => ("NetBIOS", "Network", 181),
         445 => ("SMB", "File", 182),
         548 => ("AFP", "File", 183),
         2049 => ("NFS", "File", 184),
@@ -718,7 +718,7 @@ fn port_rules(port: u16) -> EngineVerdict {
         3074 => ("Xbox Live", "Game", 205),
         27015 | 27016 => ("Steam", "Game", 206),
         853 => ("DoT", "Network", 207),
-        784 | 785 | 786 => ("WireGuard", "VPN", 208),
+        784..=786 => ("WireGuard", "VPN", 208),
         _ => {
             return EngineVerdict {
                 engine: "rules".into(),
