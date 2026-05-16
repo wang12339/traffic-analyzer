@@ -239,7 +239,7 @@ dependencies = [
  "ctrlc",
  "libc",
  "serde",
- "socket2 0.5.10",
+ "socket2 0.6.3",
  "tokio",
  "tracing",
  "tracing-subscriber",
